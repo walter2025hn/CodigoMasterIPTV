@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Tv,
   ListVideo,
+  RefreshCw,
 } from 'lucide-react';
 import {
   ChannelItem,
@@ -21,6 +22,7 @@ import {
   XtreamSeriesDetail,
 } from '../../types/iptv';
 import { XtreamService } from '../../services/xtreamService';
+import { PosterImage } from '../Common/PosterImage';
 
 interface SeriesViewProps {
   series: ChannelItem[];
@@ -30,6 +32,8 @@ interface SeriesViewProps {
   onToggleFavorite: (seriesItem: ChannelItem) => void;
   searchQuery: string;
   settings: UserSettings;
+  onSyncSeries?: () => void;
+  isSyncing?: boolean;
 }
 
 const ITEMS_PER_PAGE = 50;
@@ -42,6 +46,8 @@ export const SeriesView: React.FC<SeriesViewProps> = ({
   onToggleFavorite,
   searchQuery,
   settings,
+  onSyncSeries,
+  isSyncing = false,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [categorySearch, setCategorySearch] = useState<string>('');
@@ -139,9 +145,59 @@ export const SeriesView: React.FC<SeriesViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col lg:flex-row h-full gap-4 p-3 lg:p-5 overflow-y-auto lg:overflow-hidden min-h-0">
-      {/* Category Sidebar */}
-      <div className="w-full lg:w-72 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3 flex flex-col shrink-0 max-h-56 lg:max-h-full overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-full gap-4 p-3 lg:p-5 overflow-y-auto lg:overflow-hidden min-h-0 pb-24 lg:pb-5">
+      {/* Mobile Category Quick Chips (visible on < lg) */}
+      <div className="lg:hidden flex flex-col gap-2 shrink-0 bg-zinc-900/80 border border-zinc-800/80 rounded-2xl p-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Clapperboard className="w-4 h-4 text-purple-400" />
+            <span className="text-xs font-bold uppercase tracking-wider text-zinc-300">
+              Categorías ({categories.length - 1})
+            </span>
+          </div>
+          {selectedCategory !== 'all' && (
+            <button
+              onClick={() => setSelectedCategory('all')}
+              className="text-[11px] text-purple-400 font-semibold hover:underline"
+            >
+              Ver todos
+            </button>
+          )}
+        </div>
+
+        {/* Horizontal scrollable category pill bar */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar -mx-1 px-1">
+          {categories.slice(0, 25).map((cat: any) => {
+            const isSelected =
+              (cat.key === 'all' && selectedCategory === 'all') ||
+              cat.name === selectedCategory;
+
+            return (
+              <button
+                key={cat.key || cat.name}
+                onClick={() => setSelectedCategory(cat.key || cat.name)}
+                className={`whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-purple-600 text-white font-bold shadow-md shadow-purple-600/30'
+                    : 'bg-zinc-950/80 text-zinc-400 border border-zinc-800 hover:text-white'
+                }`}
+              >
+                <span>{cat.name}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                    isSelected ? 'bg-purple-800 text-purple-200' : 'bg-zinc-800 text-zinc-400'
+                  }`}
+                >
+                  {cat.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Desktop Category Sidebar (visible on lg+) */}
+      <div className="hidden lg:flex w-72 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3 flex-col shrink-0 h-full overflow-hidden">
         <div className="flex items-center justify-between mb-2.5 px-1">
           <div className="flex items-center gap-2">
             <Clapperboard className="w-4 h-4 text-purple-400" />
@@ -198,7 +254,7 @@ export const SeriesView: React.FC<SeriesViewProps> = ({
       </div>
 
       {/* Series Grid */}
-      <div className="flex-1 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-4 flex flex-col min-h-0 overflow-hidden">
+      <div className="flex-1 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-4 flex flex-col min-h-0 lg:overflow-hidden">
         <div className="flex items-center justify-between mb-3 pb-2 border-b border-zinc-800/60">
           <div className="flex items-center gap-2">
             <Clapperboard className="w-5 h-5 text-purple-400" />
@@ -213,14 +269,42 @@ export const SeriesView: React.FC<SeriesViewProps> = ({
           )}
         </div>
 
-        {filteredSeries.length === 0 ? (
+        {isSyncing ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+            <div className="w-12 h-12 border-3 border-purple-500/20 border-t-purple-500 rounded-full animate-spin mb-4" />
+            <h4 className="text-base font-bold text-white mb-1">Cargando Series de TV</h4>
+            <p className="text-xs text-zinc-400 max-w-sm">
+              Descargando y organizando el catálogo completo de series y temporadas desde tu servidor IPTV...
+            </p>
+          </div>
+        ) : filteredSeries.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-zinc-500">
-            <Clapperboard className="w-12 h-12 mb-3 stroke-1 text-zinc-600" />
-            <p className="text-base font-semibold text-zinc-300">No hay series en esta categoría</p>
-            <p className="text-xs text-zinc-500 mt-1">Prueba seleccionando otra categoría o limpiando la búsqueda</p>
+            <div className="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mb-4 text-purple-400">
+              <Clapperboard className="w-8 h-8 stroke-1" />
+            </div>
+            <p className="text-base font-bold text-zinc-200 mb-1">
+              {series.length === 0
+                ? 'No hay series cargadas'
+                : 'No se encontraron series en esta categoría'}
+            </p>
+            <p className="text-xs text-zinc-400 max-w-sm mb-5 leading-relaxed">
+              {series.length === 0
+                ? 'Puedes sincronizar el catálogo de series directamente desde tu servidor Xtream Codes haciendo clic abajo.'
+                : 'Prueba seleccionando otra categoría de la barra lateral o limpiando el filtro de búsqueda.'}
+            </p>
+
+            {onSyncSeries && (
+              <button
+                onClick={onSyncSeries}
+                className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-purple-600/30 transition-all cursor-pointer active:scale-95"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Sincronizar Series del Servidor</span>
+              </button>
+            )}
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto pr-1">
+          <div className="flex-1 lg:overflow-y-auto pr-1">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3.5 pb-4">
               {visibleSeries.map((item) => {
                 const isFav = favorites.includes(item.id);
@@ -231,25 +315,19 @@ export const SeriesView: React.FC<SeriesViewProps> = ({
                     onClick={() => handleOpenSeries(item)}
                     className="group relative bg-zinc-950/80 border border-zinc-800/80 hover:border-purple-500/50 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10 cursor-pointer flex flex-col"
                   >
-                    {/* Poster Image */}
+                    {/* Poster Image with Robust Fallback */}
                     <div className="relative aspect-[2/3] w-full bg-zinc-900 overflow-hidden">
-                      {item.logo ? (
-                        <img
-                          src={item.logo}
-                          alt={item.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      ) : null}
-                      <div className="absolute inset-0 flex items-center justify-center bg-zinc-900 -z-0">
-                        <Clapperboard className="w-8 h-8 text-zinc-700" />
-                      </div>
+                      <PosterImage
+                        src={item.logo}
+                        alt={item.name}
+                        type="series"
+                        year={item.releaseDate}
+                        category={item.group}
+                      />
 
                       {/* Rating Badge */}
                       {item.rating && (
-                        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md border border-white/10 text-amber-400 text-[11px] font-bold flex items-center gap-1">
+                        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md border border-white/10 text-amber-400 text-[11px] font-bold flex items-center gap-1 z-20">
                           <Star className="w-3 h-3 fill-amber-400" />
                           <span>{item.rating}</span>
                         </div>
@@ -261,7 +339,7 @@ export const SeriesView: React.FC<SeriesViewProps> = ({
                           e.stopPropagation();
                           onToggleFavorite(item);
                         }}
-                        className={`absolute top-2 right-2 p-1.5 rounded-lg backdrop-blur-md border transition-all ${
+                        className={`absolute top-2 right-2 p-1.5 rounded-lg backdrop-blur-md border transition-all z-20 ${
                           isFav
                             ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
                             : 'bg-black/60 border-white/10 text-zinc-400 hover:text-white'
@@ -271,8 +349,8 @@ export const SeriesView: React.FC<SeriesViewProps> = ({
                       </button>
 
                       {/* Hover effect */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <div className="px-3 py-1.5 rounded-full bg-purple-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-purple-600/40">
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
+                        <div className="px-3 py-1.5 rounded-full bg-purple-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-purple-600/40 transform scale-90 group-hover:scale-100 transition-transform">
                           <span>Ver Episodios</span>
                           <ChevronRight className="w-3.5 h-3.5" />
                         </div>
@@ -303,7 +381,7 @@ export const SeriesView: React.FC<SeriesViewProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleLoadMore}
-                    className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all cursor-pointer"
+                    className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all cursor-pointer active:scale-95"
                   >
                     <span>Cargar más (+50 series)</span>
                     <ChevronDown className="w-4 h-4" />
@@ -311,7 +389,7 @@ export const SeriesView: React.FC<SeriesViewProps> = ({
                   {filteredSeries.length > visibleCount + 50 && (
                     <button
                       onClick={handleLoadAll}
-                      className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold text-xs transition-all cursor-pointer border border-zinc-700"
+                      className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold text-xs transition-all cursor-pointer border border-zinc-700 active:scale-95"
                     >
                       Cargar Todas ({filteredSeries.length})
                     </button>
@@ -337,17 +415,13 @@ export const SeriesView: React.FC<SeriesViewProps> = ({
               </button>
 
               <div className="w-28 shrink-0 aspect-[2/3] rounded-xl overflow-hidden shadow-xl bg-zinc-900 border border-zinc-800 hidden sm:block">
-                {selectedSeries.logo ? (
-                  <img
-                    src={selectedSeries.logo}
-                    alt={selectedSeries.name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-zinc-600">
-                    <Clapperboard className="w-8 h-8" />
-                  </div>
-                )}
+                <PosterImage
+                  src={selectedSeries.logo}
+                  alt={selectedSeries.name}
+                  type="series"
+                  year={selectedSeries.releaseDate}
+                  category={selectedSeries.group}
+                />
               </div>
 
               <div className="flex-1 min-w-0 pr-8">

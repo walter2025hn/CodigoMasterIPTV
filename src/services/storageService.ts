@@ -5,6 +5,7 @@ import {
   PlaylistSource,
   UserSettings,
 } from '../types/iptv';
+import { DBService } from './dbService';
 
 const STORAGE_KEYS = {
   SOURCES: 'codigomaster_sources',
@@ -205,6 +206,7 @@ export class StorageService {
     sources = sources.filter((s) => s.id !== sourceId);
     this.saveSources(sources);
     localStorage.removeItem(`${STORAGE_KEYS.CACHED_CHANNELS}${sourceId}`);
+    DBService.removeChannels(sourceId).catch(() => {});
 
     const activeId = this.getActiveSourceId();
     if (activeId === sourceId) {
@@ -221,6 +223,19 @@ export class StorageService {
     localStorage.setItem(STORAGE_KEYS.ACTIVE_SOURCE, id);
   }
 
+  public static async getChannelsAsync(sourceId: string): Promise<ChannelItem[]> {
+    if (sourceId === DEFAULT_DEMO_SOURCE.id) {
+      return DEMO_CHANNELS;
+    }
+    // 1. Try IndexedDB first for full dataset
+    const idbChannels = await DBService.getChannels(sourceId);
+    if (idbChannels && idbChannels.length > 0) {
+      return idbChannels;
+    }
+    // 2. Fallback to localStorage
+    return this.getChannels(sourceId);
+  }
+
   public static getChannels(sourceId: string): ChannelItem[] {
     if (sourceId === DEFAULT_DEMO_SOURCE.id) {
       return DEMO_CHANNELS;
@@ -234,15 +249,36 @@ export class StorageService {
   }
 
   public static saveChannels(sourceId: string, channels: ChannelItem[]): void {
+    // 1. Save full data to IndexedDB asynchronously
+    DBService.saveChannels(sourceId, channels).catch((e) => {
+      console.warn('DBService saveChannels error:', e);
+    });
+
+    // 2. Save a balanced sample (live, movies, series) to localStorage for quick sync
     try {
       localStorage.setItem(`${STORAGE_KEYS.CACHED_CHANNELS}${sourceId}`, JSON.stringify(channels));
     } catch (e) {
-      console.warn('LocalStorage limit exceeded, caching subset:', e);
-      // Cache first 2000 channels to avoid quota error if list is huge
-      localStorage.setItem(
-        `${STORAGE_KEYS.CACHED_CHANNELS}${sourceId}`,
-        JSON.stringify(channels.slice(0, 2000))
-      );
+      console.warn('LocalStorage limit exceeded, saving balanced subset:', e);
+      const live = channels.filter((c) => c.streamType === 'live').slice(0, 1000);
+      const vod = channels.filter((c) => c.streamType === 'movie').slice(0, 1000);
+      const series = channels.filter((c) => c.streamType === 'series').slice(0, 500);
+      const subset = [...live, ...vod, ...series];
+      try {
+        localStorage.setItem(
+          `${STORAGE_KEYS.CACHED_CHANNELS}${sourceId}`,
+          JSON.stringify(subset)
+        );
+      } catch {
+        // In extreme quota case, save first 500
+        try {
+          localStorage.setItem(
+            `${STORAGE_KEYS.CACHED_CHANNELS}${sourceId}`,
+            JSON.stringify(channels.slice(0, 500))
+          );
+        } catch {
+          // Ignore
+        }
+      }
     }
   }
 

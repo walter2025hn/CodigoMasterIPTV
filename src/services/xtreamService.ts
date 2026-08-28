@@ -72,7 +72,11 @@ export class XtreamService {
         : data && typeof data === 'object' && !('user_info' in data)
         ? Object.values(data)
         : [];
-      return list as XtreamCategory[];
+      return (list as any[]).map((c) => ({
+        category_id: String(c.category_id ?? c.id ?? ''),
+        category_name: String(c.category_name ?? c.name ?? `Categoría ${c.category_id || ''}`),
+        parent_id: c.parent_id,
+      }));
     } catch {
       return [];
     }
@@ -90,7 +94,11 @@ export class XtreamService {
         : data && typeof data === 'object' && !('user_info' in data)
         ? Object.values(data)
         : [];
-      return list as XtreamCategory[];
+      return (list as any[]).map((c) => ({
+        category_id: String(c.category_id ?? c.id ?? ''),
+        category_name: String(c.category_name ?? c.name ?? `Películas ${c.category_id || ''}`),
+        parent_id: c.parent_id,
+      }));
     } catch {
       return [];
     }
@@ -108,7 +116,11 @@ export class XtreamService {
         : data && typeof data === 'object' && !('user_info' in data)
         ? Object.values(data)
         : [];
-      return list as XtreamCategory[];
+      return (list as any[]).map((c) => ({
+        category_id: String(c.category_id ?? c.id ?? ''),
+        category_name: String(c.category_name ?? c.name ?? `Series ${c.category_id || ''}`),
+        parent_id: c.parent_id,
+      }));
     } catch {
       return [];
     }
@@ -124,13 +136,28 @@ export class XtreamService {
       params.category_id = categoryId;
     }
 
-    const url = this.buildDirectUrl(source, params);
-    const data = await NetworkService.fetchJson<any>(url, useProxy);
-    const rawList: any[] = Array.isArray(data)
-      ? data
-      : data && typeof data === 'object' && !('user_info' in data)
-      ? Object.values(data)
-      : [];
+    // Fetch categories in parallel to map numeric IDs (like "227") to real names (like "DEPORTES HD")
+    const [data, categories] = await Promise.all([
+      NetworkService.fetchJson<any>(this.buildDirectUrl(source, params), useProxy).catch(() => []),
+      this.getLiveCategories(source, useProxy).catch(() => []),
+    ]);
+
+    const catMap = new Map<string, string>();
+    categories.forEach((c) => {
+      if (c.category_id && c.category_name) {
+        catMap.set(String(c.category_id), c.category_name);
+      }
+    });
+
+    let rawList: any[] = [];
+    if (Array.isArray(data)) {
+      rawList = data;
+    } else if (data && typeof data === 'object') {
+      if (Array.isArray(data.live_streams)) rawList = data.live_streams;
+      else if (Array.isArray(data.streams)) rawList = data.streams;
+      else if (Array.isArray(data.data)) rawList = data.data;
+      else if (!('user_info' in data)) rawList = Object.values(data);
+    }
 
     if (rawList.length === 0) return [];
 
@@ -139,16 +166,29 @@ export class XtreamService {
     return rawList.map((item: any) => {
       const streamId = item.stream_id ?? item.id;
       const streamUrl = `${baseUrl}/live/${source.username}/${source.password}/${streamId}.m3u8`;
+      const catIdStr = String(item.category_id ?? item.category_name ?? '');
+      const groupName =
+        item.category_name ||
+        catMap.get(catIdStr) ||
+        (catIdStr && !/^\d+$/.test(catIdStr) ? catIdStr : `En Vivo ${catIdStr ? `(${catIdStr})` : ''}`);
+
+      const logoUrl =
+        item.stream_icon ||
+        item.logo ||
+        item.icon ||
+        item.tvg_logo ||
+        item.cover ||
+        '';
 
       return {
         id: `${source.id}-live-${streamId}`,
         num: item.num,
-        name: item.name || item.stream_display_name || 'Canal sin nombre',
+        name: item.name || item.stream_display_name || item.title || 'Canal sin nombre',
         streamType: 'live',
         url: streamUrl,
-        logo: item.stream_icon || item.logo || '',
-        group: item.category_name || item.category_id || 'En Vivo',
-        tvgId: item.epg_channel_id || '',
+        logo: logoUrl,
+        group: groupName,
+        tvgId: item.epg_channel_id || item.tvg_id || '',
         tvgName: item.name || item.stream_display_name,
         streamId: streamId,
         sourceId: source.id,
@@ -168,13 +208,27 @@ export class XtreamService {
       params.category_id = categoryId;
     }
 
-    const url = this.buildDirectUrl(source, params);
-    const data = await NetworkService.fetchJson<any>(url, useProxy);
-    const rawList: any[] = Array.isArray(data)
-      ? data
-      : data && typeof data === 'object' && !('user_info' in data)
-      ? Object.values(data)
-      : [];
+    const [data, categories] = await Promise.all([
+      NetworkService.fetchJson<any>(this.buildDirectUrl(source, params), useProxy).catch(() => []),
+      this.getVodCategories(source, useProxy).catch(() => []),
+    ]);
+
+    const catMap = new Map<string, string>();
+    categories.forEach((c) => {
+      if (c.category_id && c.category_name) {
+        catMap.set(String(c.category_id), c.category_name);
+      }
+    });
+
+    let rawList: any[] = [];
+    if (Array.isArray(data)) {
+      rawList = data;
+    } else if (data && typeof data === 'object') {
+      if (Array.isArray(data.vod_streams)) rawList = data.vod_streams;
+      else if (Array.isArray(data.streams)) rawList = data.streams;
+      else if (Array.isArray(data.data)) rawList = data.data;
+      else if (!('user_info' in data)) rawList = Object.values(data);
+    }
 
     if (rawList.length === 0) return [];
 
@@ -184,6 +238,20 @@ export class XtreamService {
       const streamId = item.stream_id ?? item.vod_id ?? item.id;
       const ext = item.container_extension || item.extension || 'mp4';
       const streamUrl = `${baseUrl}/movie/${source.username}/${source.password}/${streamId}.${ext}`;
+      const catIdStr = String(item.category_id ?? item.category_name ?? '');
+      const groupName =
+        item.category_name ||
+        catMap.get(catIdStr) ||
+        (catIdStr && !/^\d+$/.test(catIdStr) ? catIdStr : `Películas ${catIdStr ? `(${catIdStr})` : ''}`);
+
+      const posterUrl =
+        item.stream_icon ||
+        item.cover ||
+        item.cover_big ||
+        item.poster ||
+        item.movie_image ||
+        item.backdrop_path?.[0] ||
+        '';
 
       return {
         id: `${source.id}-vod-${streamId}`,
@@ -191,8 +259,8 @@ export class XtreamService {
         name: item.name || item.title || item.stream_display_name || 'Película sin título',
         streamType: 'movie',
         url: streamUrl,
-        logo: item.stream_icon || item.cover || item.poster || '',
-        group: item.category_name || item.category_id || 'Películas',
+        logo: posterUrl,
+        group: groupName,
         streamId: streamId,
         sourceId: source.id,
         rating: item.rating_5based || item.rating || '',
@@ -215,27 +283,55 @@ export class XtreamService {
       params.category_id = categoryId;
     }
 
-    const url = this.buildDirectUrl(source, params);
-    const data = await NetworkService.fetchJson<any>(url, useProxy);
-    const rawList: any[] = Array.isArray(data)
-      ? data
-      : data && typeof data === 'object' && !('user_info' in data)
-      ? Object.values(data)
-      : [];
+    const [data, categories] = await Promise.all([
+      NetworkService.fetchJson<any>(this.buildDirectUrl(source, params), useProxy).catch(() => []),
+      this.getSeriesCategories(source, useProxy).catch(() => []),
+    ]);
+
+    const catMap = new Map<string, string>();
+    categories.forEach((c) => {
+      if (c.category_id && c.category_name) {
+        catMap.set(String(c.category_id), c.category_name);
+      }
+    });
+
+    let rawList: any[] = [];
+    if (Array.isArray(data)) {
+      rawList = data;
+    } else if (data && typeof data === 'object') {
+      if (Array.isArray(data.series)) rawList = data.series;
+      else if (Array.isArray(data.streams)) rawList = data.streams;
+      else if (Array.isArray(data.data)) rawList = data.data;
+      else if (!('user_info' in data)) rawList = Object.values(data);
+    }
 
     if (rawList.length === 0) return [];
 
     return rawList.map((item: any) => {
       const seriesId = item.series_id ?? item.id;
+      const catIdStr = String(item.category_id ?? item.category_name ?? '');
+      const groupName =
+        item.category_name ||
+        catMap.get(catIdStr) ||
+        (catIdStr && !/^\d+$/.test(catIdStr) ? catIdStr : `Series ${catIdStr ? `(${catIdStr})` : ''}`);
+
+      const posterUrl =
+        item.cover ||
+        item.cover_big ||
+        item.stream_icon ||
+        item.poster ||
+        item.series_image ||
+        item.backdrop_path?.[0] ||
+        '';
 
       return {
         id: `${source.id}-series-${seriesId}`,
         num: item.num,
-        name: item.name || item.title || item.series_name || 'Serie',
+        name: item.name || item.title || item.series_name || 'Serie sin título',
         streamType: 'series',
-        url: '', // Loaded when episode selected
-        logo: item.cover || item.stream_icon || item.poster || '',
-        group: item.category_name || item.category_id || 'Series',
+        url: '', // Loaded dynamically when episode is chosen
+        logo: posterUrl,
+        group: groupName,
         streamId: seriesId,
         sourceId: source.id,
         rating: item.rating_5based || item.rating || '',

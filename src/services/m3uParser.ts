@@ -23,7 +23,7 @@ export function parseM3U(content: string, sourceId: string): ChannelItem[] {
       const tvgNameMatch = line.match(/tvg-name="([^"]*)"/i);
       if (tvgNameMatch) currentItem.tvgName = tvgNameMatch[1];
 
-      const tvgLogoMatch = line.match(/tvg-logo="([^"]*)"/i);
+      const tvgLogoMatch = line.match(/(?:tvg-logo|tvg-cover|tvg-poster|cover|poster|logo)="([^"]*)"/i);
       if (tvgLogoMatch) currentItem.logo = tvgLogoMatch[1];
 
       const groupTitleMatch = line.match(/group-title="([^"]*)"/i);

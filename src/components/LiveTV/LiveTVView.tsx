@@ -103,9 +103,59 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col lg:flex-row h-full gap-4 p-3 lg:p-5 overflow-y-auto lg:overflow-hidden min-h-0">
-      {/* Category Sidebar */}
-      <div className="w-full lg:w-72 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3 flex flex-col shrink-0 max-h-52 lg:max-h-full overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-full gap-4 p-3 lg:p-5 overflow-y-auto lg:overflow-hidden min-h-0 pb-24 lg:pb-5">
+      {/* Mobile Category Quick Chips (visible on < lg) */}
+      <div className="lg:hidden flex flex-col gap-2 shrink-0 bg-zinc-900/80 border border-zinc-800/80 rounded-2xl p-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-indigo-400" />
+            <span className="text-xs font-bold uppercase tracking-wider text-zinc-300">
+              Categorías ({categories.length - 1})
+            </span>
+          </div>
+          {selectedCategory !== 'all' && (
+            <button
+              onClick={() => setSelectedCategory('all')}
+              className="text-[11px] text-indigo-400 font-semibold hover:underline"
+            >
+              Ver todos
+            </button>
+          )}
+        </div>
+
+        {/* Horizontal scrollable category pill bar */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar -mx-1 px-1">
+          {categories.slice(0, 25).map((cat: any) => {
+            const isSelected =
+              (cat.key === 'all' && selectedCategory === 'all') ||
+              cat.name === selectedCategory;
+
+            return (
+              <button
+                key={cat.key || cat.name}
+                onClick={() => setSelectedCategory(cat.key || cat.name)}
+                className={`whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/30'
+                    : 'bg-zinc-950/80 text-zinc-400 border border-zinc-800 hover:text-white'
+                }`}
+              >
+                <span>{cat.name}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                    isSelected ? 'bg-indigo-800 text-indigo-200' : 'bg-zinc-800 text-zinc-400'
+                  }`}
+                >
+                  {cat.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Desktop Category Sidebar (visible on lg+) */}
+      <div className="hidden lg:flex w-72 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3 flex-col shrink-0 h-full overflow-hidden">
         <div className="flex items-center justify-between mb-2.5 px-1">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-indigo-400" />
@@ -162,7 +212,7 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
       </div>
 
       {/* Main Channels & Player Area */}
-      <div className="flex-1 flex flex-col xl:flex-row gap-4 min-h-0 overflow-y-auto xl:overflow-hidden">
+      <div className="flex-1 flex flex-col xl:flex-row gap-4 min-h-0 lg:overflow-hidden">
         {/* Active Player Box (Mobile & Desktop View) */}
         <div className="w-full xl:w-[58%] shrink-0 flex flex-col">
           <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black border border-zinc-800">
@@ -180,16 +230,16 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
           {currentChannel && (
             <div className="mt-3 p-3.5 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
                   <Radio className="w-5 h-5 animate-pulse" />
                 </div>
-                <div>
-                  <h4 className="text-sm font-bold text-white">{currentChannel.name}</h4>
-                  <p className="text-xs text-zinc-400">{currentChannel.group}</p>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-bold text-white truncate">{currentChannel.name}</h4>
+                  <p className="text-xs text-zinc-400 truncate">{currentChannel.group}</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0 ml-2">
                 <button
                   onClick={() => onToggleFavorite(currentChannel)}
                   className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
@@ -211,7 +261,7 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
         </div>
 
         {/* Channel Grid / List */}
-        <div className="flex-1 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col lg:min-h-0 lg:overflow-hidden">
           <div className="flex items-center justify-between mb-3 px-1">
             <div className="flex items-center gap-2">
               <Tv className="w-4 h-4 text-indigo-400" />
@@ -236,7 +286,7 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
               <p className="text-xs text-zinc-500">Prueba con otra búsqueda o categoría</p>
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto pr-1">
+            <div className="flex-1 lg:overflow-y-auto pr-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-2 pb-2">
                 {visibleChannels.map((ch, idx) => {
                   const isPlayingThis = currentChannel?.id === ch.id;
@@ -254,20 +304,22 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         {/* Logo or Icon */}
-                        <div className="relative w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 overflow-hidden p-1">
+                        <div className="relative w-11 h-11 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 overflow-hidden p-1">
                           {ch.logo ? (
                             <img
                               src={ch.logo}
                               alt={ch.name}
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
                               className="w-full h-full object-contain"
                               onError={(e) => {
                                 e.currentTarget.style.display = 'none';
                               }}
                             />
                           ) : null}
-                          <Tv className="w-4 h-4 text-zinc-500 absolute" />
+                          <Tv className="w-4 h-4 text-zinc-500 absolute -z-0" />
                           {isPlayingThis && (
-                            <div className="absolute inset-0 bg-indigo-600/60 backdrop-blur-xs flex items-center justify-center">
+                            <div className="absolute inset-0 bg-indigo-600/70 backdrop-blur-xs flex items-center justify-center">
                               <Volume2 className="w-4 h-4 text-white animate-bounce" />
                             </div>
                           )}
@@ -287,7 +339,7 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
                               {ch.name}
                             </h4>
                           </div>
-                          <p className="text-[11px] text-zinc-500 truncate">{ch.group}</p>
+                          <p className="text-[11px] text-zinc-400 truncate mt-0.5">{ch.group}</p>
                         </div>
                       </div>
 
@@ -314,14 +366,14 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
 
               {/* Load more if channels exceed visibleCount */}
               {filteredChannels.length > visibleCount && (
-                <div className="py-3 flex flex-col items-center justify-center gap-2 border-t border-zinc-800/80 mt-2">
+                <div className="py-4 flex flex-col items-center justify-center gap-2 border-t border-zinc-800/80 mt-3">
                   <p className="text-xs text-zinc-400">
                     Mostrando {visibleChannels.length} de {filteredChannels.length} canales
                   </p>
                   <div className="flex gap-2">
                     <button
                       onClick={handleLoadMore}
-                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                      className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-lg shadow-indigo-600/20 cursor-pointer active:scale-95"
                     >
                       <span>Cargar +50 canales</span>
                       <ChevronDown className="w-4 h-4" />
@@ -329,9 +381,9 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
                     {filteredChannels.length > visibleCount + 50 && (
                       <button
                         onClick={handleLoadAll}
-                        className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition-all cursor-pointer"
+                        className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition-all cursor-pointer active:scale-95"
                       >
-                        Cargar Todos
+                        Cargar Todos ({filteredChannels.length})
                       </button>
                     )}
                   </div>

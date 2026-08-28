@@ -35,6 +35,8 @@ export default function App() {
   const [activeSourceId, setActiveSourceId] = useState<string>('');
   const [channels, setChannels] = useState<ChannelItem[]>([]);
   const [isLoadingChannels, setIsLoadingChannels] = useState<boolean>(false);
+  const [isSyncingVod, setIsSyncingVod] = useState<boolean>(false);
+  const [isSyncingSeries, setIsSyncingSeries] = useState<boolean>(false);
 
   // Playback & Navigation State
   const [activeTab, setActiveTab] = useState<MainTab>('live');
@@ -55,25 +57,70 @@ export default function App() {
 
   // Initial Load
   useEffect(() => {
-    const loadedSources = StorageService.getSources();
-    setSources(loadedSources);
+    const initApp = async () => {
+      const loadedSources = StorageService.getSources();
+      setSources(loadedSources);
 
-    const activeId = StorageService.getActiveSourceId() || loadedSources[0]?.id || '';
-    setActiveSourceId(activeId);
+      const activeId = StorageService.getActiveSourceId() || loadedSources[0]?.id || '';
+      setActiveSourceId(activeId);
 
-    setFavorites(StorageService.getFavorites());
-    setHistory(StorageService.getHistory());
-    setSettings(StorageService.getSettings());
+      setFavorites(StorageService.getFavorites());
+      setHistory(StorageService.getHistory());
+      setSettings(StorageService.getSettings());
 
-    if (activeId) {
-      loadChannelsForSource(activeId, loadedSources);
-    }
+      if (activeId) {
+        await loadChannelsForSource(activeId, loadedSources);
+      }
+    };
+    initApp();
   }, []);
 
   // Active Source Object
   const activeSource = useMemo(() => {
     return sources.find((s) => s.id === activeSourceId) || null;
   }, [sources, activeSourceId]);
+
+  // Sync VOD Movies specifically
+  const handleSyncMovies = async (source = activeSource) => {
+    if (!source || source.type !== 'xtream' || isSyncingVod) return;
+    setIsSyncingVod(true);
+    try {
+      const vod = await XtreamService.getVodStreams(source, undefined, settings.useProxy);
+      setChannels((prev) => {
+        const nonMovies = prev.filter((c) => c.streamType !== 'movie');
+        const updated = [...nonMovies, ...vod];
+        StorageService.saveChannels(source.id, updated);
+        return updated;
+      });
+      source.moviesCount = vod.length;
+      StorageService.addSource(source);
+    } catch (e) {
+      console.error('Error syncing movies:', e);
+    } finally {
+      setIsSyncingVod(false);
+    }
+  };
+
+  // Sync Series specifically
+  const handleSyncSeries = async (source = activeSource) => {
+    if (!source || source.type !== 'xtream' || isSyncingSeries) return;
+    setIsSyncingSeries(true);
+    try {
+      const series = await XtreamService.getSeriesStreams(source, undefined, settings.useProxy);
+      setChannels((prev) => {
+        const nonSeries = prev.filter((c) => c.streamType !== 'series');
+        const updated = [...nonSeries, ...series];
+        StorageService.saveChannels(source.id, updated);
+        return updated;
+      });
+      source.seriesCount = series.length;
+      StorageService.addSource(source);
+    } catch (e) {
+      console.error('Error syncing series:', e);
+    } finally {
+      setIsSyncingSeries(false);
+    }
+  };
 
   // Load Channels For Specific Source
   const loadChannelsForSource = async (sourceId: string, currentSources = sources) => {
@@ -88,8 +135,10 @@ export default function App() {
       return;
     }
 
-    // Try reading cached first
-    const cached = StorageService.getChannels(sourceId);
+    const targetSource = currentSources.find((s) => s.id === sourceId);
+
+    // Try reading full cached channels from IndexedDB / Storage
+    const cached = await StorageService.getChannelsAsync(sourceId);
     if (cached && cached.length > 0) {
       setChannels(cached);
       if (!currentPlayingItem) {
@@ -97,11 +146,23 @@ export default function App() {
         setCurrentPlayingItem(firstLive);
       }
       setIsLoadingChannels(false);
+
+      // If Xtream source is missing movies or series in cache, auto-fetch them in background
+      if (targetSource && targetSource.type === 'xtream') {
+        const hasMovies = cached.some((c) => c.streamType === 'movie');
+        const hasSeries = cached.some((c) => c.streamType === 'series');
+
+        if (!hasMovies) {
+          handleSyncMovies(targetSource);
+        }
+        if (!hasSeries) {
+          handleSyncSeries(targetSource);
+        }
+      }
       return;
     }
 
     // Otherwise fetch fresh from source
-    const targetSource = currentSources.find((s) => s.id === sourceId);
     if (!targetSource) {
       setIsLoadingChannels(false);
       return;
@@ -140,6 +201,16 @@ export default function App() {
       console.error('Error fetching channels for source:', e);
     } finally {
       setIsLoadingChannels(false);
+    }
+  };
+
+  // Auto trigger movie/series sync when user switches tabs if empty
+  const handleTabChange = (tab: MainTab) => {
+    setActiveTab(tab);
+    if (tab === 'movies' && moviesList.length === 0 && activeSource?.type === 'xtream') {
+      handleSyncMovies(activeSource);
+    } else if (tab === 'series' && seriesList.length === 0 && activeSource?.type === 'xtream') {
+      handleSyncSeries(activeSource);
     }
   };
 
@@ -303,7 +374,7 @@ export default function App() {
         {/* Navigation Sidebar */}
         <Navigation
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
           counts={{
             live: liveChannels.length,
             movies: moviesList.length,
@@ -339,6 +410,8 @@ export default function App() {
               favorites={favoriteIds}
               onToggleFavorite={handleToggleFavorite}
               searchQuery={searchQuery}
+              onSyncMovies={() => handleSyncMovies()}
+              isSyncing={isSyncingVod}
             />
           )}
 
@@ -352,6 +425,8 @@ export default function App() {
               onToggleFavorite={handleToggleFavorite}
               searchQuery={searchQuery}
               settings={settings}
+              onSyncSeries={() => handleSyncSeries()}
+              isSyncing={isSyncingSeries}
             />
           )}
 

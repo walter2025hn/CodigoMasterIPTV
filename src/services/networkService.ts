@@ -75,11 +75,11 @@ export class NetworkService {
         }
       }
     } catch {
-      // CORS or network error on web, continue to proxies
+      // CORS or mixed-content network error on web, continue to server proxy
     }
 
-    // 3. If in web browser and proxy is enabled, try local proxy
-    if (!this.isNative() && preferProxy) {
+    // 3. If in web browser, always try local Express server proxy /api/proxy
+    if (!this.isNative()) {
       try {
         const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
         const res = await fetch(proxyUrl);
