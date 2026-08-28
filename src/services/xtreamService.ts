@@ -5,23 +5,18 @@ import {
   XtreamCategory,
   XtreamSeriesDetail,
 } from '../types/iptv';
+import { NetworkService } from './networkService';
 
 export class XtreamService {
-  private static cleanServerUrl(url: string): string {
-    let clean = url.trim();
-    if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
-      clean = 'http://' + clean;
-    }
-    // Remove trailing slashes and player_api.php if typed
-    clean = clean.replace(/\/+$/, '');
-    clean = clean.replace(/\/player_api\.php.*$/, '');
-    return clean;
+  public static cleanServerUrl(url: string): string {
+    return NetworkService.cleanUrl(url)
+      .replace(/\/+$/, '')
+      .replace(/\/player_api\.php.*$/, '');
   }
 
-  private static buildUrl(
+  public static buildDirectUrl(
     source: PlaylistSource,
-    params: Record<string, string | number> = {},
-    useProxy: boolean = true
+    params: Record<string, string | number> = {}
   ): string {
     const baseUrl = this.cleanServerUrl(source.serverUrl || '');
     const urlObj = new URL(`${baseUrl}/player_api.php`);
@@ -32,21 +27,17 @@ export class XtreamService {
       urlObj.searchParams.set(key, String(value));
     }
 
-    const fullUrl = urlObj.toString();
-    if (useProxy) {
-      return `/api/proxy?url=${encodeURIComponent(fullUrl)}`;
-    }
-    return fullUrl;
+    return urlObj.toString();
   }
 
   public static async authenticate(
     serverUrl: string,
     username: string,
     password: string,
-    useProxy: boolean = true
+    useProxy: boolean = false
   ): Promise<XtreamAccountInfo> {
     const dummySource: PlaylistSource = {
-      id: 'test',
+      id: 'auth_test',
       name: 'Test',
       type: 'xtream',
       serverUrl,
@@ -55,19 +46,15 @@ export class XtreamService {
       createdAt: Date.now(),
     };
 
-    const targetUrl = this.buildUrl(dummySource, {}, useProxy);
-    const response = await fetch(targetUrl);
-    if (!response.ok) {
-      throw new Error(`Error del servidor (${response.status}): ${response.statusText}`);
-    }
+    const targetUrl = this.buildDirectUrl(dummySource, {});
+    const data = await NetworkService.fetchJson<any>(targetUrl, useProxy);
 
-    const data = await response.json();
-    if (data.user_info && data.user_info.auth === 0) {
-      throw new Error(data.user_info.message || 'Credenciales inválidas');
+    if (data.user_info && (data.user_info.auth === 0 || data.user_info.status === 'Banned')) {
+      throw new Error(data.user_info.message || 'Credenciales inválidas o cuenta inactiva');
     }
 
     if (!data.user_info) {
-      throw new Error('Respuesta inválida del servidor Xtream Codes');
+      throw new Error('El servidor respondió pero no devolvió información de usuario válida');
     }
 
     return data as XtreamAccountInfo;
@@ -75,51 +62,55 @@ export class XtreamService {
 
   public static async getLiveCategories(
     source: PlaylistSource,
-    useProxy: boolean = true
+    useProxy: boolean = false
   ): Promise<XtreamCategory[]> {
-    const url = this.buildUrl(source, { action: 'get_live_categories' }, useProxy);
-    const response = await fetch(url);
-    if (!response.ok) return [];
-    const data = await response.json();
-    return Array.isArray(data) ? data : [];
+    try {
+      const url = this.buildDirectUrl(source, { action: 'get_live_categories' });
+      const data = await NetworkService.fetchJson<any>(url, useProxy);
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
   }
 
   public static async getVodCategories(
     source: PlaylistSource,
-    useProxy: boolean = true
+    useProxy: boolean = false
   ): Promise<XtreamCategory[]> {
-    const url = this.buildUrl(source, { action: 'get_vod_categories' }, useProxy);
-    const response = await fetch(url);
-    if (!response.ok) return [];
-    const data = await response.json();
-    return Array.isArray(data) ? data : [];
+    try {
+      const url = this.buildDirectUrl(source, { action: 'get_vod_categories' });
+      const data = await NetworkService.fetchJson<any>(url, useProxy);
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
   }
 
   public static async getSeriesCategories(
     source: PlaylistSource,
-    useProxy: boolean = true
+    useProxy: boolean = false
   ): Promise<XtreamCategory[]> {
-    const url = this.buildUrl(source, { action: 'get_series_categories' }, useProxy);
-    const response = await fetch(url);
-    if (!response.ok) return [];
-    const data = await response.json();
-    return Array.isArray(data) ? data : [];
+    try {
+      const url = this.buildDirectUrl(source, { action: 'get_series_categories' });
+      const data = await NetworkService.fetchJson<any>(url, useProxy);
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
   }
 
   public static async getLiveStreams(
     source: PlaylistSource,
     categoryId?: string,
-    useProxy: boolean = true
+    useProxy: boolean = false
   ): Promise<ChannelItem[]> {
     const params: Record<string, string | number> = { action: 'get_live_streams' };
     if (categoryId && categoryId !== 'all') {
       params.category_id = categoryId;
     }
 
-    const url = this.buildUrl(source, params, useProxy);
-    const response = await fetch(url);
-    if (!response.ok) return [];
-    const data = await response.json();
+    const url = this.buildDirectUrl(source, params);
+    const data = await NetworkService.fetchJson<any>(url, useProxy);
     if (!Array.isArray(data)) return [];
 
     const baseUrl = this.cleanServerUrl(source.serverUrl || '');
@@ -149,17 +140,15 @@ export class XtreamService {
   public static async getVodStreams(
     source: PlaylistSource,
     categoryId?: string,
-    useProxy: boolean = true
+    useProxy: boolean = false
   ): Promise<ChannelItem[]> {
     const params: Record<string, string | number> = { action: 'get_vod_streams' };
     if (categoryId && categoryId !== 'all') {
       params.category_id = categoryId;
     }
 
-    const url = this.buildUrl(source, params, useProxy);
-    const response = await fetch(url);
-    if (!response.ok) return [];
-    const data = await response.json();
+    const url = this.buildDirectUrl(source, params);
+    const data = await NetworkService.fetchJson<any>(url, useProxy);
     if (!Array.isArray(data)) return [];
 
     const baseUrl = this.cleanServerUrl(source.serverUrl || '');
@@ -192,17 +181,15 @@ export class XtreamService {
   public static async getSeriesStreams(
     source: PlaylistSource,
     categoryId?: string,
-    useProxy: boolean = true
+    useProxy: boolean = false
   ): Promise<ChannelItem[]> {
     const params: Record<string, string | number> = { action: 'get_series' };
     if (categoryId && categoryId !== 'all') {
       params.category_id = categoryId;
     }
 
-    const url = this.buildUrl(source, params, useProxy);
-    const response = await fetch(url);
-    if (!response.ok) return [];
-    const data = await response.json();
+    const url = this.buildDirectUrl(source, params);
+    const data = await NetworkService.fetchJson<any>(url, useProxy);
     if (!Array.isArray(data)) return [];
 
     return data.map((item: any) => {
@@ -232,12 +219,10 @@ export class XtreamService {
   public static async getSeriesInfo(
     source: PlaylistSource,
     seriesId: string | number,
-    useProxy: boolean = true
+    useProxy: boolean = false
   ): Promise<XtreamSeriesDetail | null> {
-    const url = this.buildUrl(source, { action: 'get_series_info', series_id: seriesId }, useProxy);
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    const data = await response.json();
+    const url = this.buildDirectUrl(source, { action: 'get_series_info', series_id: seriesId });
+    const data = await NetworkService.fetchJson<any>(url, useProxy);
     if (!data) return null;
 
     const baseUrl = this.cleanServerUrl(source.serverUrl || '');

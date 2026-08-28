@@ -22,6 +22,7 @@ import {
   Maximize2,
 } from 'lucide-react';
 import { ChannelItem, UserSettings } from '../../types/iptv';
+import { NetworkService } from '../../services/networkService';
 
 interface VideoPlayerProps {
   channel: ChannelItem | null;
@@ -68,15 +69,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [currentLevel, setCurrentLevel] = useState<number>(-1); // -1 is Auto
   const [audioTracks, setAudioTracks] = useState<{ id: number; name: string }[]>([]);
   const [currentAudioTrack, setCurrentAudioTrack] = useState<number>(0);
-  const [isProxyUsed, setIsProxyUsed] = useState<boolean>(settings.useProxy);
+  const [isProxyUsed, setIsProxyUsed] = useState<boolean>(settings.useProxy && !NetworkService.isNative());
 
   // Determine stream URL with proxy fallback
   const getStreamUrl = (targetUrl: string, useProxy: boolean): string => {
     if (!targetUrl) return '';
-    if (useProxy) {
-      return `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
-    }
-    return targetUrl;
+    return NetworkService.getStreamUrl(targetUrl, useProxy);
   };
 
   // Video Load & HLS Init
@@ -144,8 +142,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              // Try toggling proxy once on network error
-              if (!isProxyUsed) {
+              // Try toggling proxy once on network error if on web
+              if (!NetworkService.isNative() && !isProxyUsed) {
                 console.warn('Network error, retrying with CORS proxy...');
                 setIsProxyUsed(true);
               } else {
@@ -165,7 +163,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl') || !isHlsStream) {
-      // Native Safari / H5 direct playback
+      // Native Safari / Android WebView direct playback
       video.src = streamUrl;
       video.load();
       if (settings.autoPlay) {
@@ -173,7 +171,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
       setIsLoading(false);
     } else {
-      setHasError('Formato no soportado por este navegador.');
+      setHasError('Formato no soportado por este reproductor.');
     }
 
     return () => {
@@ -204,7 +202,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       setIsLoading(false);
     };
     const onError = () => {
-      if (!isProxyUsed) {
+      if (!NetworkService.isNative() && !isProxyUsed) {
         setIsProxyUsed(true);
       } else {
         setHasError('Error al reproducir el flujo multimedia.');

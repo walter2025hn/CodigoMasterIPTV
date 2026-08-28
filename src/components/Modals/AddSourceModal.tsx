@@ -17,6 +17,7 @@ import { PlaylistSource, UserSettings } from '../../types/iptv';
 import { XtreamService } from '../../services/xtreamService';
 import { parseM3U } from '../../services/m3uParser';
 import { StorageService } from '../../services/storageService';
+import { NetworkService } from '../../services/networkService';
 
 interface AddSourceModalProps {
   isOpen: boolean;
@@ -170,16 +171,7 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
 
     try {
       const sourceId = `m3u-${Date.now()}`;
-      const fetchUrl = settings.useProxy
-        ? `/api/proxy?url=${encodeURIComponent(m3uUrl)}`
-        : m3uUrl;
-
-      const response = await fetch(fetchUrl);
-      if (!response.ok) {
-        throw new Error(`Error al descargar la lista (${response.status}): ${response.statusText}`);
-      }
-
-      const content = await response.text();
+      const content = await NetworkService.fetchText(m3uUrl.trim(), settings.useProxy);
       const channels = parseM3U(content, sourceId);
 
       if (channels.length === 0) {

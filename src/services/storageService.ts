@@ -159,7 +159,7 @@ export const DEMO_CHANNELS: ChannelItem[] = [
 ];
 
 export const DEFAULT_SETTINGS: UserSettings = {
-  useProxy: true,
+  useProxy: false,
   autoPlay: true,
   defaultAspectRatio: 'auto',
   volume: 1,

@@ -14,6 +14,7 @@ import {
 import { StorageService, DEFAULT_DEMO_SOURCE, DEMO_CHANNELS } from './services/storageService';
 import { XtreamService } from './services/xtreamService';
 import { parseM3U } from './services/m3uParser';
+import { NetworkService } from './services/networkService';
 import { Header } from './components/Header';
 import { Navigation, MainTab } from './components/Navigation';
 import { LiveTVView } from './components/LiveTV/LiveTVView';
@@ -26,7 +27,7 @@ import { AddSourceModal } from './components/Modals/AddSourceModal';
 import { ApkExportModal } from './components/Modals/ApkExportModal';
 import { SettingsModal } from './components/Modals/SettingsModal';
 import { AccountDetailsModal } from './components/Modals/AccountDetailsModal';
-import { VideoPlayer } from './components/Player/VideoPlayer';
+import { PlayerOverlayModal } from './components/Player/PlayerOverlayModal';
 
 export default function App() {
   // Sources & Channels
@@ -38,6 +39,7 @@ export default function App() {
   // Playback & Navigation State
   const [activeTab, setActiveTab] = useState<MainTab>('live');
   const [currentPlayingItem, setCurrentPlayingItem] = useState<ChannelItem | null>(null);
+  const [isPlayerModalOpen, setIsPlayerModalOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Favorites, History & Settings
@@ -126,19 +128,12 @@ export default function App() {
           setCurrentPlayingItem(live[0]);
         }
       } else if (targetSource.type === 'm3u' && targetSource.url) {
-        const fetchUrl = settings.useProxy
-          ? `/api/proxy?url=${encodeURIComponent(targetSource.url)}`
-          : targetSource.url;
-
-        const res = await fetch(fetchUrl);
-        if (res.ok) {
-          const content = await res.text();
-          const parsed = parseM3U(content, sourceId);
-          setChannels(parsed);
-          StorageService.saveChannels(sourceId, parsed);
-          if (!currentPlayingItem && parsed.length > 0) {
-            setCurrentPlayingItem(parsed[0]);
-          }
+        const content = await NetworkService.fetchText(targetSource.url, settings.useProxy);
+        const parsed = parseM3U(content, sourceId);
+        setChannels(parsed);
+        StorageService.saveChannels(sourceId, parsed);
+        if (!currentPlayingItem && parsed.length > 0) {
+          setCurrentPlayingItem(parsed[0]);
         }
       }
     } catch (e) {
@@ -194,17 +189,10 @@ export default function App() {
         activeSource.seriesCount = series.length;
         StorageService.addSource(activeSource);
       } else if (activeSource.type === 'm3u' && activeSource.url) {
-        const fetchUrl = settings.useProxy
-          ? `/api/proxy?url=${encodeURIComponent(activeSource.url)}`
-          : activeSource.url;
-
-        const res = await fetch(fetchUrl);
-        if (res.ok) {
-          const text = await res.text();
-          const parsed = parseM3U(text, activeSource.id);
-          setChannels(parsed);
-          StorageService.saveChannels(activeSource.id, parsed);
-        }
+        const content = await NetworkService.fetchText(activeSource.url, settings.useProxy);
+        const parsed = parseM3U(content, activeSource.id);
+        setChannels(parsed);
+        StorageService.saveChannels(activeSource.id, parsed);
       }
     } catch (e) {
       console.error('Error refreshing source:', e);
@@ -242,14 +230,16 @@ export default function App() {
     item: ChannelItem,
     seasonNum?: number,
     epNum?: number,
-    episodeTitle?: string
+    episodeTitle?: string,
+    openModal: boolean = false
   ) => {
     setCurrentPlayingItem(item);
     StorageService.addToHistory(item, 0, 0, seasonNum, epNum, episodeTitle);
     setHistory(StorageService.getHistory());
 
-    // Switch to live or keep view depending on context
-    if (item.streamType === 'live' && activeTab !== 'live' && activeTab !== 'favorites') {
+    if (openModal || item.streamType === 'movie' || item.streamType === 'series') {
+      setIsPlayerModalOpen(true);
+    } else if (item.streamType === 'live' && activeTab !== 'live' && activeTab !== 'favorites') {
       setActiveTab('live');
     }
   };
@@ -283,7 +273,6 @@ export default function App() {
   // Progress update for history resume
   const handleProgress = (currentTime: number, duration: number) => {
     if (!currentPlayingItem || currentPlayingItem.streamType === 'live') return;
-    // Debounced update to history
     if (Math.floor(currentTime) % 10 === 0) {
       StorageService.addToHistory(currentPlayingItem, currentTime, duration);
       setHistory(StorageService.getHistory());
@@ -332,7 +321,7 @@ export default function App() {
             <LiveTVView
               channels={liveChannels}
               currentChannel={currentPlayingItem}
-              onSelectChannel={(ch) => handlePlayItem(ch)}
+              onSelectChannel={(ch) => handlePlayItem(ch, undefined, undefined, undefined, false)}
               settings={settings}
               favorites={favoriteIds}
               onToggleFavorite={handleToggleFavorite}
@@ -346,7 +335,7 @@ export default function App() {
           {activeTab === 'movies' && (
             <MoviesView
               movies={moviesList}
-              onPlayMovie={(m) => handlePlayItem(m)}
+              onPlayMovie={(m) => handlePlayItem(m, undefined, undefined, undefined, true)}
               favorites={favoriteIds}
               onToggleFavorite={handleToggleFavorite}
               searchQuery={searchQuery}
@@ -358,7 +347,7 @@ export default function App() {
             <SeriesView
               series={seriesList}
               activeSource={activeSource}
-              onPlayEpisode={(item, s, ep) => handlePlayItem(item, s, ep)}
+              onPlayEpisode={(item, s, ep) => handlePlayItem(item, s, ep, undefined, true)}
               favorites={favoriteIds}
               onToggleFavorite={handleToggleFavorite}
               searchQuery={searchQuery}
@@ -370,7 +359,7 @@ export default function App() {
           {activeTab === 'favorites' && (
             <FavoritesView
               favorites={favorites}
-              onPlayItem={(item) => handlePlayItem(item)}
+              onPlayItem={(item) => handlePlayItem(item, undefined, undefined, undefined, true)}
               onRemoveFavorite={handleToggleFavorite}
             />
           )}
@@ -379,7 +368,7 @@ export default function App() {
           {activeTab === 'history' && (
             <HistoryView
               history={history}
-              onPlayItem={(item) => handlePlayItem(item)}
+              onPlayItem={(item) => handlePlayItem(item, undefined, undefined, undefined, true)}
               onClearHistory={() => {
                 StorageService.clearHistory();
                 setHistory([]);
@@ -401,6 +390,19 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* FULLSCREEN PLAYER OVERLAY FOR MOVIES, SERIES & POPOUT */}
+      <PlayerOverlayModal
+        channel={currentPlayingItem}
+        isOpen={isPlayerModalOpen}
+        onClose={() => setIsPlayerModalOpen(false)}
+        settings={settings}
+        isFavorite={currentPlayingItem ? favoriteIds.includes(currentPlayingItem.id) : false}
+        onToggleFavorite={handleToggleFavorite}
+        onNext={handleNextChannel}
+        onPrev={handlePrevChannel}
+        onProgress={handleProgress}
+      />
 
       {/* MODALS */}
       <AddSourceModal
