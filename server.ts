@@ -4,9 +4,27 @@ import { createServer as createViteServer } from "vite";
 import http from "http";
 import https from "https";
 
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 60 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 60, rejectUnauthorized: false });
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // CORS middleware for all API requests
+  app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD");
+    res.setHeader("Access-Control-Allow-Headers", "*");
+    res.setHeader(
+      "Access-Control-Expose-Headers",
+      "Content-Length, Content-Range, Accept-Ranges, Content-Type, Content-Disposition"
+    );
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+    next();
+  });
 
   // JSON parser with generous limit for large M3U playlist uploads
   app.use(express.json({ limit: "50mb" }));
@@ -31,6 +49,7 @@ async function startServer() {
         const parsedUrl = new URL(urlToFetch);
         const isHttps = parsedUrl.protocol === "https:";
         const client = isHttps ? https : http;
+        const agent = isHttps ? httpsAgent : httpAgent;
 
         const headers: Record<string, string> = {
           "User-Agent":
@@ -48,8 +67,9 @@ async function startServer() {
           {
             method: req.method || "GET",
             headers,
+            agent,
             rejectUnauthorized: false, // Allows self-signed IPTV stream certs
-            timeout: 25000,
+            timeout: 30000,
           },
           (proxyRes) => {
             // Follow HTTP 301, 302, 303, 307, 308 redirects automatically on server-side
@@ -134,8 +154,8 @@ async function startServer() {
     proxyUrlRequest(targetUrl);
   };
 
-  app.get("/api/proxy", handleProxy);
-  app.get("/api/stream", handleProxy);
+  app.all("/api/proxy", handleProxy);
+  app.all("/api/stream", handleProxy);
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {
