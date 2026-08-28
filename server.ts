@@ -13,78 +13,129 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
   // CORS Proxy endpoint for IPTV lists and streams when testing in Web browsers
-  app.get("/api/proxy", async (req, res) => {
-    const targetUrl = req.query.url as string;
+  const handleProxy = (req: express.Request, res: express.Response) => {
+    const targetUrl = (req.query.url as string) || (req.query.stream as string);
     if (!targetUrl) {
       return res.status(400).json({ error: "Missing url parameter" });
     }
 
-    try {
-      const parsedUrl = new URL(targetUrl);
-      const isHttps = parsedUrl.protocol === "https:";
-      const client = isHttps ? https : http;
-
-      const headers: Record<string, string> = {
-        "User-Agent": (req.headers["user-agent"] as string) || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-      };
-
-      if (req.headers["range"]) {
-        headers["Range"] = req.headers["range"] as string;
+    const proxyUrlRequest = (urlToFetch: string, redirectCount = 0) => {
+      if (redirectCount > 6) {
+        if (!res.headersSent) {
+          res.status(508).json({ error: "Too many redirects from IPTV stream server" });
+        }
+        return;
       }
 
-      const request = client.request(
-        targetUrl,
-        {
-          method: "GET",
-          headers,
-          rejectUnauthorized: false, // Allows self-signed IPTV stream certs
-          timeout: 20000,
-        },
-        (proxyRes) => {
-          // Set CORS headers
-          res.setHeader("Access-Control-Allow-Origin", "*");
-          res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-          res.setHeader("Access-Control-Allow-Headers", "*");
+      try {
+        const parsedUrl = new URL(urlToFetch);
+        const isHttps = parsedUrl.protocol === "https:";
+        const client = isHttps ? https : http;
 
-          if (proxyRes.headers["content-type"]) {
-            res.setHeader("Content-Type", proxyRes.headers["content-type"]);
-          }
-          if (proxyRes.headers["content-length"]) {
-            res.setHeader("Content-Length", proxyRes.headers["content-length"]);
-          }
-          if (proxyRes.headers["content-range"]) {
-            res.setHeader("Content-Range", proxyRes.headers["content-range"]);
-          }
-          if (proxyRes.headers["accept-ranges"]) {
-            res.setHeader("Accept-Ranges", proxyRes.headers["accept-ranges"]);
-          }
+        const headers: Record<string, string> = {
+          "User-Agent":
+            (req.headers["user-agent"] as string) ||
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 IPTVPlayer/2.0",
+          Accept: "*/*",
+        };
 
-          res.status(proxyRes.statusCode || 200);
-          proxyRes.pipe(res);
+        if (req.headers["range"]) {
+          headers["Range"] = req.headers["range"] as string;
         }
-      );
 
-      request.on("error", (err) => {
-        console.error("Proxy error:", err.message);
+        const request = client.request(
+          urlToFetch,
+          {
+            method: req.method || "GET",
+            headers,
+            rejectUnauthorized: false, // Allows self-signed IPTV stream certs
+            timeout: 25000,
+          },
+          (proxyRes) => {
+            // Follow HTTP 301, 302, 303, 307, 308 redirects automatically on server-side
+            if (
+              proxyRes.statusCode &&
+              [301, 302, 303, 307, 308].includes(proxyRes.statusCode) &&
+              proxyRes.headers.location
+            ) {
+              const redirectTarget = new URL(proxyRes.headers.location, urlToFetch).toString();
+              proxyRes.resume(); // discard unused socket body
+              return proxyUrlRequest(redirectTarget, redirectCount + 1);
+            }
+
+            // Set CORS headers for browser
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+            res.setHeader("Access-Control-Allow-Headers", "*");
+            res.setHeader(
+              "Access-Control-Expose-Headers",
+              "Content-Length, Content-Range, Accept-Ranges, Content-Type, Content-Disposition"
+            );
+
+            // Forward video/audio content type or infer appropriate mime
+            const contentType = proxyRes.headers["content-type"];
+            if (contentType && contentType !== "application/octet-stream") {
+              res.setHeader("Content-Type", contentType);
+            } else if (urlToFetch.includes(".m3u8")) {
+              res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+            } else if (urlToFetch.includes(".ts")) {
+              res.setHeader("Content-Type", "video/mp2t");
+            } else if (urlToFetch.includes(".mp4")) {
+              res.setHeader("Content-Type", "video/mp4");
+            } else if (urlToFetch.includes(".mkv")) {
+              res.setHeader("Content-Type", "video/x-matroska");
+            } else {
+              res.setHeader("Content-Type", contentType || "video/mp4");
+            }
+
+            if (proxyRes.headers["content-length"]) {
+              res.setHeader("Content-Length", proxyRes.headers["content-length"]);
+            }
+            if (proxyRes.headers["content-range"]) {
+              res.setHeader("Content-Range", proxyRes.headers["content-range"]);
+            }
+            if (proxyRes.headers["accept-ranges"]) {
+              res.setHeader("Accept-Ranges", proxyRes.headers["accept-ranges"]);
+            } else {
+              res.setHeader("Accept-Ranges", "bytes");
+            }
+
+            res.status(proxyRes.statusCode || 200);
+            proxyRes.pipe(res);
+          }
+        );
+
+        request.on("error", (err) => {
+          console.error("Proxy error for URL:", urlToFetch, err.message);
+          if (!res.headersSent) {
+            res.status(502).json({ error: `Proxy request failed: ${err.message}` });
+          }
+        });
+
+        request.on("timeout", () => {
+          request.destroy();
+          if (!res.headersSent) {
+            res.status(504).json({ error: "Proxy request timed out" });
+          }
+        });
+
+        req.on("close", () => {
+          request.destroy();
+        });
+
+        request.end();
+      } catch (err: any) {
         if (!res.headersSent) {
-          res.status(502).json({ error: `Proxy request failed: ${err.message}` });
+          res.status(400).json({ error: "Invalid URL provided: " + err.message });
         }
-      });
+      }
+    };
 
-      request.on("timeout", () => {
-        request.destroy();
-        if (!res.headersSent) {
-          res.status(504).json({ error: "Proxy request timed out" });
-        }
-      });
+    proxyUrlRequest(targetUrl);
+  };
 
-      request.end();
-    } catch (err: any) {
-      console.error("Invalid target URL:", err.message);
-      res.status(400).json({ error: "Invalid URL provided" });
-    }
-  });
+  app.get("/api/proxy", handleProxy);
+  app.get("/api/stream", handleProxy);
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {

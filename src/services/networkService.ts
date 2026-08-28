@@ -31,18 +31,27 @@ export class NetworkService {
   }
 
   /**
-   * Build stream URL - Never use relative /api/proxy in native APKs
+   * Build stream URL - Uses proxy for web/mixed content avoidance, direct for native APK
    */
   public static getStreamUrl(targetUrl: string, allowWebProxy: boolean = false): string {
     if (!targetUrl) return '';
     const clean = this.cleanUrl(targetUrl);
 
-    // On native Android/iOS APK, ALWAYS return direct stream URL
-    if (this.isNative() || !allowWebProxy) {
+    // On native Android/iOS APK, return direct stream URL unless proxy is forced
+    if (this.isNative()) {
       return clean;
     }
 
-    // In web browser development, check if proxy is available or use direct
+    // In web browser (especially under HTTPS like AI Studio or deployed domain),
+    // we must proxy HTTP streams to avoid browser mixed-content and CORS blocks
+    if (typeof window !== 'undefined') {
+      const isHttps = window.location.protocol === 'https:';
+      const isHttpTarget = clean.startsWith('http://');
+      if (allowWebProxy || isHttps || isHttpTarget) {
+        return `/api/proxy?url=${encodeURIComponent(clean)}`;
+      }
+    }
+
     return clean;
   }
 

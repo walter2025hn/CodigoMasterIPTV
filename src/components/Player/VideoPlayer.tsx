@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
 import {
   Play,
@@ -15,11 +15,12 @@ import {
   Heart,
   Radio,
   Tv,
-  Layers,
-  Sparkles,
+  Film,
+  Clapperboard,
   AlertTriangle,
-  Info,
   Maximize2,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
 import { ChannelItem, UserSettings } from '../../types/iptv';
 import { NetworkService } from '../../services/networkService';
@@ -50,6 +51,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const hlsRef = useRef<Hls | null>(null);
   const hideControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Playback control states
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [volume, setVolume] = useState<number>(settings.volume ?? 1);
   const [isMuted, setIsMuted] = useState<boolean>(settings.muted ?? false);
@@ -64,133 +66,339 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [showControls, setShowControls] = useState<boolean>(true);
   const [showSettingsMenu, setShowSettingsMenu] = useState<boolean>(false);
 
+  // Auto-reconnect & watchdog state
+  const [isAutoReconnecting, setIsAutoReconnecting] = useState<boolean>(false);
+  const [reconnectCount, setReconnectCount] = useState<number>(0);
+
   // Tracks & Qualities
   const [levels, setLevels] = useState<{ id: number; name: string }[]>([]);
   const [currentLevel, setCurrentLevel] = useState<number>(-1); // -1 is Auto
   const [audioTracks, setAudioTracks] = useState<{ id: number; name: string }[]>([]);
   const [currentAudioTrack, setCurrentAudioTrack] = useState<number>(0);
-  const [isProxyUsed, setIsProxyUsed] = useState<boolean>(settings.useProxy && !NetworkService.isNative());
+  const [isProxyUsed, setIsProxyUsed] = useState<boolean>(
+    settings.useProxy || (!NetworkService.isNative() && typeof window !== 'undefined' && window.location.protocol === 'https:')
+  );
+
+  // Refs for 3-second watchdog and stall detection
+  const isUserPausedRef = useRef<boolean>(false);
+  const lastPlaybackPosRef = useRef<number>(0);
+  const stallCountRef = useRef<number>(0);
+  const consecutiveErrorsRef = useRef<number>(0);
+  const isHandlingRecoveryRef = useRef<boolean>(false);
+  const streamLoadTimestampRef = useRef<number>(Date.now());
 
   // Determine stream URL with proxy fallback
-  const getStreamUrl = (targetUrl: string, useProxy: boolean): string => {
-    if (!targetUrl) return '';
-    return NetworkService.getStreamUrl(targetUrl, useProxy);
-  };
+  const getStreamUrl = useCallback(
+    (targetUrl: string, useProxy: boolean): string => {
+      if (!targetUrl) return '';
+      return NetworkService.getStreamUrl(targetUrl, useProxy);
+    },
+    []
+  );
 
-  // Video Load & HLS Init
+  // Core stream loader
+  const loadStream = useCallback(
+    (targetUrl: string, useProxy: boolean, resumeTime?: number) => {
+      const video = videoRef.current;
+      if (!video || !targetUrl) return;
+
+      setIsLoading(true);
+      setHasError(null);
+      setLevels([]);
+      setAudioTracks([]);
+      streamLoadTimestampRef.current = Date.now();
+
+      // Clean up previous HLS instance
+      if (hlsRef.current) {
+        try {
+          hlsRef.current.destroy();
+        } catch {
+          // ignore
+        }
+        hlsRef.current = null;
+      }
+
+      const streamUrl = getStreamUrl(targetUrl, useProxy);
+      const isLive = channel?.streamType === 'live' || !channel?.streamType;
+      const isVod = channel?.streamType === 'movie' || channel?.streamType === 'series';
+
+      // Check if URL suggests HLS or Live TS stream
+      const isHlsCandidate =
+        targetUrl.toLowerCase().includes('.m3u8') ||
+        targetUrl.toLowerCase().includes('/live/') ||
+        (isLive && !targetUrl.toLowerCase().endsWith('.mp4'));
+
+      if (isHlsCandidate && Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false, // Better buffer stability for IPTV
+          backBufferLength: 60,
+          maxBufferLength: Math.max(settings.bufferLength || 30, 45),
+          maxMaxBufferLength: 90,
+          maxBufferSize: 60 * 1000 * 1000,
+          highBufferWatchdogPeriod: 2,
+          nudgeOffset: 0.2,
+          nudgeMaxRetry: 8,
+          maxBufferHole: 0.5,
+          fragLoadingTimeOut: 20000,
+          manifestLoadingTimeOut: 20000,
+          levelLoadingTimeOut: 20000,
+          xhrSetup: (xhr) => {
+            xhr.withCredentials = false;
+          },
+        });
+
+        hlsRef.current = hls;
+        hls.loadSource(streamUrl);
+        hls.attachMedia(video);
+
+        hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+          setIsLoading(false);
+          setIsAutoReconnecting(false);
+          stallCountRef.current = 0;
+          consecutiveErrorsRef.current = 0;
+
+          const mappedLevels = data.levels.map((lvl, index) => ({
+            id: index,
+            name: lvl.height ? `${lvl.height}p` : `Calidad ${index + 1}`,
+          }));
+          setLevels(mappedLevels);
+
+          if (resumeTime && resumeTime > 0 && isVod) {
+            video.currentTime = resumeTime;
+          }
+
+          if (!isUserPausedRef.current) {
+            video.play().catch(() => setIsPlaying(false));
+          }
+        });
+
+        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_, data) => {
+          const tracks = data.audioTracks.map((track) => ({
+            id: track.id,
+            name: track.name || track.lang || `Pista ${track.id + 1}`,
+          }));
+          setAudioTracks(tracks);
+        });
+
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.fatal) {
+            console.warn('Hls fatal error occurred:', data.type, data.details);
+            consecutiveErrorsRef.current += 1;
+
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                if (!useProxy && !NetworkService.isNative()) {
+                  console.log('Network error: Auto-switching to CORS Proxy...');
+                  setIsProxyUsed(true);
+                  loadStream(targetUrl, true, resumeTime);
+                } else if (consecutiveErrorsRef.current < 4) {
+                  // Auto-retry network after short backoff
+                  setIsAutoReconnecting(true);
+                  setTimeout(() => {
+                    if (hlsRef.current) {
+                      hlsRef.current.startLoad();
+                    }
+                  }, 1500);
+                } else {
+                  setHasError('Error de red o transmisión no disponible temporalmente.');
+                  setIsLoading(false);
+                }
+                break;
+
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.log('Media error: Attempting HLS media recovery...');
+                setIsAutoReconnecting(true);
+                hls.recoverMediaError();
+                break;
+
+              default:
+                if (consecutiveErrorsRef.current < 3) {
+                  setIsAutoReconnecting(true);
+                  setTimeout(() => loadStream(targetUrl, useProxy, resumeTime), 1000);
+                } else {
+                  setHasError('No se pudo decodificar la transmisión.');
+                  setIsLoading(false);
+                }
+                break;
+            }
+          }
+        });
+      } else {
+        // Direct Native / HTML5 playback (MP4, MKV, WebM, or Native HLS Safari/Android)
+        video.src = streamUrl;
+        video.load();
+
+        if (resumeTime && resumeTime > 0) {
+          video.currentTime = resumeTime;
+        }
+
+        if (!isUserPausedRef.current) {
+          video
+            .play()
+            .then(() => {
+              setIsLoading(false);
+              setIsAutoReconnecting(false);
+              stallCountRef.current = 0;
+              consecutiveErrorsRef.current = 0;
+            })
+            .catch(() => {
+              setIsPlaying(false);
+              setIsLoading(false);
+            });
+        } else {
+          setIsLoading(false);
+        }
+      }
+    },
+    [channel?.streamType, getStreamUrl, settings.bufferLength]
+  );
+
+  // Initial load or channel change
   useEffect(() => {
     if (!channel || !channel.url) return;
 
-    const video = videoRef.current;
-    if (!video) return;
+    isUserPausedRef.current = !settings.autoPlay;
+    lastPlaybackPosRef.current = 0;
+    stallCountRef.current = 0;
+    consecutiveErrorsRef.current = 0;
+    setIsAutoReconnecting(false);
 
-    setIsLoading(true);
-    setHasError(null);
-    setLevels([]);
-    setAudioTracks([]);
-
-    const streamUrl = getStreamUrl(channel.url, isProxyUsed);
-
-    // Destroy previous HLS instance
-    if (hlsRef.current) {
-      hlsRef.current.destroy();
-      hlsRef.current = null;
-    }
-
-    const isHlsStream =
-      channel.url.toLowerCase().includes('.m3u8') ||
-      channel.url.toLowerCase().includes('/live/') ||
-      channel.streamType === 'live';
-
-    if (isHlsStream && Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        backBufferLength: 60,
-        maxBufferLength: settings.bufferLength || 30,
-        xhrSetup: (xhr) => {
-          xhr.withCredentials = false;
-        },
-      });
-
-      hlsRef.current = hls;
-      hls.loadSource(streamUrl);
-      hls.attachMedia(video);
-
-      hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
-        setIsLoading(false);
-        const mappedLevels = data.levels.map((lvl, index) => ({
-          id: index,
-          name: lvl.height ? `${lvl.height}p` : `Calidad ${index + 1}`,
-        }));
-        setLevels(mappedLevels);
-
-        if (settings.autoPlay) {
-          video.play().catch(() => setIsPlaying(false));
-        }
-      });
-
-      hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, (_, data) => {
-        const tracks = data.audioTracks.map((track) => ({
-          id: track.id,
-          name: track.name || track.lang || `Pista ${track.id + 1}`,
-        }));
-        setAudioTracks(tracks);
-      });
-
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              // Try toggling proxy once on network error if on web
-              if (!NetworkService.isNative() && !isProxyUsed) {
-                console.warn('Network error, retrying with CORS proxy...');
-                setIsProxyUsed(true);
-              } else {
-                setHasError('Error de red o transmisión no disponible.');
-                hls.destroy();
-              }
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              console.warn('HLS Media error, attempting recovery...');
-              hls.recoverMediaError();
-              break;
-            default:
-              setHasError('No se pudo reproducir la transmisión.');
-              hls.destroy();
-              break;
-          }
-        }
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl') || !isHlsStream) {
-      // Native Safari / Android WebView direct playback
-      video.src = streamUrl;
-      video.load();
-      if (settings.autoPlay) {
-        video.play().catch(() => setIsPlaying(false));
-      }
-      setIsLoading(false);
-    } else {
-      setHasError('Formato no soportado por este reproductor.');
-    }
+    loadStream(channel.url, isProxyUsed);
 
     return () => {
       if (hlsRef.current) {
-        hlsRef.current.destroy();
+        try {
+          hlsRef.current.destroy();
+        } catch {
+          // ignore
+        }
         hlsRef.current = null;
       }
     };
-  }, [channel?.id, channel?.url, isProxyUsed]);
+  }, [channel?.id, channel?.url, isProxyUsed, loadStream, settings.autoPlay]);
+
+  // =========================================================================
+  // 3-SECOND WATCHDOG: Checks every 3s if playback is stalled & auto-reconnects
+  // =========================================================================
+  useEffect(() => {
+    if (!channel || !channel.url) return;
+
+    const watchdogInterval = setInterval(() => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      // If user intentionally paused the stream, skip watchdog check
+      if (isUserPausedRef.current) {
+        return;
+      }
+
+      // If the player is supposed to be playing but HTML5 video element is paused
+      if (video.paused && !isUserPausedRef.current) {
+        video.play().catch(() => {});
+        return;
+      }
+
+      const currentPos = video.currentTime;
+      const lastPos = lastPlaybackPosRef.current;
+      const diff = Math.abs(currentPos - lastPos);
+
+      // Normal playback: video position advanced >= 0.15s in the last 3s
+      if (diff >= 0.15) {
+        lastPlaybackPosRef.current = currentPos;
+        if (stallCountRef.current > 0) {
+          stallCountRef.current = 0;
+          setIsAutoReconnecting(false);
+        }
+        return;
+      }
+
+      // If we just loaded recently (<4s ago), give buffer time to build
+      if (Date.now() - streamLoadTimestampRef.current < 4000) {
+        return;
+      }
+
+      // Stalled / Intercut detected!
+      stallCountRef.current += 1;
+      console.warn(
+        `[Watchdog 3s] Reproducción detenida o intercortada (stall #${stallCountRef.current}) en pos ${currentPos.toFixed(2)}s`
+      );
+
+      if (stallCountRef.current >= 1 && !isHandlingRecoveryRef.current) {
+        isHandlingRecoveryRef.current = true;
+        setIsAutoReconnecting(true);
+        setReconnectCount((prev) => prev + 1);
+
+        const isLive = channel.streamType === 'live' || !channel.streamType;
+        const currentProgress = video.currentTime;
+
+        // Recovery Step 1: Soft buffer nudge / HLS recover
+        if (hlsRef.current) {
+          if (stallCountRef.current === 1) {
+            try {
+              hlsRef.current.recoverMediaError();
+              video.currentTime += 0.2; // nudge forward over buffer hole
+              video.play().catch(() => {});
+            } catch {
+              // fallback to reload
+            }
+          } else {
+            // Recovery Step 2: Reload HLS live source with fresh timestamp
+            const baseUrl = getStreamUrl(channel.url, isProxyUsed);
+            const freshUrl = isLive
+              ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`
+              : baseUrl;
+
+            hlsRef.current.loadSource(freshUrl);
+            hlsRef.current.startLoad();
+            video.play().catch(() => {});
+          }
+        } else {
+          // Direct Video (VOD Movies, Series, or direct MP4/TS)
+          if (stallCountRef.current === 1) {
+            video.play().catch(() => {});
+          } else {
+            const baseUrl = getStreamUrl(channel.url, isProxyUsed);
+            const freshUrl = isLive
+              ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`
+              : baseUrl;
+
+            video.src = freshUrl;
+            video.load();
+            if (!isLive && currentProgress > 0) {
+              video.currentTime = currentProgress;
+            }
+            video.play().catch(() => {});
+          }
+        }
+
+        setTimeout(() => {
+          isHandlingRecoveryRef.current = false;
+        }, 2000);
+      }
+    }, 3000);
+
+    return () => clearInterval(watchdogInterval);
+  }, [channel?.id, channel?.url, channel?.streamType, getStreamUrl, isProxyUsed]);
 
   // Video Events
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
+    const onPlay = () => {
+      setIsPlaying(true);
+      isUserPausedRef.current = false;
+    };
+    const onPause = () => {
+      setIsPlaying(false);
+    };
     const onWaiting = () => setIsLoading(true);
-    const onPlaying = () => setIsLoading(false);
+    const onPlaying = () => {
+      setIsLoading(false);
+      setIsAutoReconnecting(false);
+      stallCountRef.current = 0;
+    };
     const onTimeUpdate = () => {
       setCurrentTime(video.currentTime);
       if (onProgress) {
@@ -201,13 +409,24 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       setDuration(video.duration || 0);
       setIsLoading(false);
     };
+
     const onError = () => {
-      if (!NetworkService.isNative() && !isProxyUsed) {
+      console.warn('Native video error event received');
+      // If error occurs on direct playback, try with CORS proxy first
+      if (!isProxyUsed && !NetworkService.isNative()) {
+        console.log('Direct playback error: switching to proxy...');
         setIsProxyUsed(true);
+        if (channel?.url) {
+          loadStream(channel.url, true, video.currentTime);
+        }
+      } else if (hlsRef.current === null && Hls.isSupported() && channel?.url) {
+        // If native video failed on VOD (e.g. MKV or TS container), try Hls.js demuxer!
+        console.log('Trying HLS.js engine fallback for VOD container...');
+        loadStream(channel.url, isProxyUsed, video.currentTime);
       } else {
         setHasError('Error al reproducir el flujo multimedia.');
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     video.addEventListener('play', onPlay);
@@ -227,7 +446,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       video.removeEventListener('loadedmetadata', onLoadedMetadata);
       video.removeEventListener('error', onError);
     };
-  }, [onProgress, isProxyUsed]);
+  }, [channel?.url, isProxyUsed, loadStream, onProgress]);
 
   // Fullscreen change listener
   useEffect(() => {
@@ -257,8 +476,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
+      isUserPausedRef.current = false;
       video.play().catch(() => {});
     } else {
+      isUserPausedRef.current = true;
       video.pause();
     }
   };
@@ -312,6 +533,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const time = parseFloat(e.target.value);
     video.currentTime = time;
     setCurrentTime(time);
+    lastPlaybackPosRef.current = time;
   };
 
   const handleLevelChange = (levelId: number) => {
@@ -333,7 +555,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Keyboard navigation & Android TV remote
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if typing in an input
       if (['input', 'textarea', 'select'].includes((e.target as HTMLElement)?.tagName?.toLowerCase())) {
         return;
       }
@@ -426,9 +647,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <div className="w-16 h-16 rounded-2xl bg-zinc-900/90 border border-indigo-500/20 flex items-center justify-center mb-4 text-indigo-400 shadow-xl shadow-indigo-500/5">
           <Tv className="w-8 h-8" />
         </div>
-        <h3 className="text-lg font-bold text-white mb-1">Ningún canal seleccionado</h3>
+        <h3 className="text-lg font-bold text-white mb-1">Ningún contenido seleccionado</h3>
         <p className="text-xs text-zinc-400 max-w-sm">
-          Selecciona un canal de la lista en vivo, película o serie para comenzar a reproducir.
+          Selecciona un canal en vivo, película o serie para comenzar a reproducir.
         </p>
       </div>
     );
@@ -445,9 +666,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       <video
         ref={videoRef}
         playsInline
+        preload="auto"
         onClick={togglePlay}
         className={`${getAspectRatioClass()} max-h-full cursor-pointer`}
       />
+
+      {/* Auto-reconnecting subtle watchdog pill badge */}
+      {isAutoReconnecting && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-zinc-950/90 text-amber-300 border border-amber-500/40 px-3.5 py-1.5 rounded-full backdrop-blur-md shadow-2xl animate-pulse text-xs font-semibold">
+          <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
+          <span>Reconectando señal automáticamente...</span>
+        </div>
+      )}
 
       {/* Loading Spinner */}
       {isLoading && (
@@ -459,21 +689,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
-      {/* Error Overlay */}
+      {/* Error Overlay with smart fallback retry */}
       {hasError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/90 backdrop-blur-md z-20 p-6 text-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-950/95 backdrop-blur-md z-20 p-6 text-center">
           <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mb-3 text-rose-400">
             <AlertTriangle className="w-7 h-7" />
           </div>
           <h4 className="text-base font-bold text-white mb-1">Error de Reproducción</h4>
           <p className="text-xs text-zinc-400 mb-4 max-w-md">{hasError}</p>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <button
               onClick={() => {
                 setHasError(null);
-                setIsProxyUsed(!isProxyUsed);
+                const nextProxy = !isProxyUsed;
+                setIsProxyUsed(nextProxy);
+                loadStream(channel.url, nextProxy, currentTime);
               }}
-              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-indigo-600/30"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Reintentar con {isProxyUsed ? 'Conexión Directa' : 'Proxy CORS'}</span>
@@ -481,7 +713,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             {onNextChannel && (
               <button
                 onClick={onNextChannel}
-                className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-all cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-all cursor-pointer border border-zinc-700"
               >
                 Siguiente Canal
               </button>
@@ -508,7 +740,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             />
           ) : (
             <div className="w-10 h-10 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-              <Tv className="w-5 h-5" />
+              {channel.streamType === 'movie' ? (
+                <Film className="w-5 h-5" />
+              ) : channel.streamType === 'series' ? (
+                <Clapperboard className="w-5 h-5" />
+              ) : (
+                <Tv className="w-5 h-5" />
+              )}
             </div>
           )}
 
@@ -517,10 +755,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               <h2 className="text-sm sm:text-base font-bold text-white leading-snug drop-shadow-md">
                 {channel.name}
               </h2>
-              {channel.streamType === 'live' && (
+              {channel.streamType === 'live' ? (
                 <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">
                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
                   EN VIVO
+                </span>
+              ) : channel.streamType === 'movie' ? (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30">
+                  PELÍCULA
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                  SERIE
                 </span>
               )}
             </div>
@@ -530,6 +776,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
         {/* Top Right Quick Actions */}
         <div className="flex items-center gap-2">
+          {/* Watchdog Active Indicator */}
+          <div
+            title="Auto-Reconexión cada 3s activa contra cortes"
+            className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold"
+          >
+            <Zap className="w-3 h-3 text-emerald-400 animate-pulse" />
+            <span>Anti-Cortes 3s</span>
+          </div>
+
           {/* Favorite Toggle */}
           <button
             onClick={() => onToggleFavorite(channel)}
