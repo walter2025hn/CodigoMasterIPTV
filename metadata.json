@@ -1,0 +1,6 @@
+{
+  "name": "Codigo Master IPTV",
+  "description": "Reproductor IPTV profesional de alto rendimiento con soporte para listas M3U/M3U8 y servidores Xtream Codes (En Vivo, Películas VOD, Series, EPG, Favoritos y exportación a APK).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
