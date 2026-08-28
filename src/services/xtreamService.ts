@@ -67,7 +67,12 @@ export class XtreamService {
     try {
       const url = this.buildDirectUrl(source, { action: 'get_live_categories' });
       const data = await NetworkService.fetchJson<any>(url, useProxy);
-      return Array.isArray(data) ? data : [];
+      const list = Array.isArray(data)
+        ? data
+        : data && typeof data === 'object' && !('user_info' in data)
+        ? Object.values(data)
+        : [];
+      return list as XtreamCategory[];
     } catch {
       return [];
     }
@@ -80,7 +85,12 @@ export class XtreamService {
     try {
       const url = this.buildDirectUrl(source, { action: 'get_vod_categories' });
       const data = await NetworkService.fetchJson<any>(url, useProxy);
-      return Array.isArray(data) ? data : [];
+      const list = Array.isArray(data)
+        ? data
+        : data && typeof data === 'object' && !('user_info' in data)
+        ? Object.values(data)
+        : [];
+      return list as XtreamCategory[];
     } catch {
       return [];
     }
@@ -93,7 +103,12 @@ export class XtreamService {
     try {
       const url = this.buildDirectUrl(source, { action: 'get_series_categories' });
       const data = await NetworkService.fetchJson<any>(url, useProxy);
-      return Array.isArray(data) ? data : [];
+      const list = Array.isArray(data)
+        ? data
+        : data && typeof data === 'object' && !('user_info' in data)
+        ? Object.values(data)
+        : [];
+      return list as XtreamCategory[];
     } catch {
       return [];
     }
@@ -111,24 +126,30 @@ export class XtreamService {
 
     const url = this.buildDirectUrl(source, params);
     const data = await NetworkService.fetchJson<any>(url, useProxy);
-    if (!Array.isArray(data)) return [];
+    const rawList: any[] = Array.isArray(data)
+      ? data
+      : data && typeof data === 'object' && !('user_info' in data)
+      ? Object.values(data)
+      : [];
+
+    if (rawList.length === 0) return [];
 
     const baseUrl = this.cleanServerUrl(source.serverUrl || '');
 
-    return data.map((item: any) => {
-      const streamId = item.stream_id;
+    return rawList.map((item: any) => {
+      const streamId = item.stream_id ?? item.id;
       const streamUrl = `${baseUrl}/live/${source.username}/${source.password}/${streamId}.m3u8`;
 
       return {
         id: `${source.id}-live-${streamId}`,
         num: item.num,
-        name: item.name || 'Canal sin nombre',
+        name: item.name || item.stream_display_name || 'Canal sin nombre',
         streamType: 'live',
         url: streamUrl,
-        logo: item.stream_icon || '',
-        group: item.category_name || 'General',
+        logo: item.stream_icon || item.logo || '',
+        group: item.category_name || item.category_id || 'En Vivo',
         tvgId: item.epg_channel_id || '',
-        tvgName: item.name,
+        tvgName: item.name || item.stream_display_name,
         streamId: streamId,
         sourceId: source.id,
         rating: item.rating,
@@ -149,23 +170,29 @@ export class XtreamService {
 
     const url = this.buildDirectUrl(source, params);
     const data = await NetworkService.fetchJson<any>(url, useProxy);
-    if (!Array.isArray(data)) return [];
+    const rawList: any[] = Array.isArray(data)
+      ? data
+      : data && typeof data === 'object' && !('user_info' in data)
+      ? Object.values(data)
+      : [];
+
+    if (rawList.length === 0) return [];
 
     const baseUrl = this.cleanServerUrl(source.serverUrl || '');
 
-    return data.map((item: any) => {
-      const streamId = item.stream_id;
-      const ext = item.container_extension || 'mp4';
+    return rawList.map((item: any) => {
+      const streamId = item.stream_id ?? item.vod_id ?? item.id;
+      const ext = item.container_extension || item.extension || 'mp4';
       const streamUrl = `${baseUrl}/movie/${source.username}/${source.password}/${streamId}.${ext}`;
 
       return {
         id: `${source.id}-vod-${streamId}`,
         num: item.num,
-        name: item.name || 'Película sin título',
+        name: item.name || item.title || item.stream_display_name || 'Película sin título',
         streamType: 'movie',
         url: streamUrl,
-        logo: item.stream_icon || '',
-        group: item.category_name || 'Películas',
+        logo: item.stream_icon || item.cover || item.poster || '',
+        group: item.category_name || item.category_id || 'Películas',
         streamId: streamId,
         sourceId: source.id,
         rating: item.rating_5based || item.rating || '',
@@ -190,19 +217,25 @@ export class XtreamService {
 
     const url = this.buildDirectUrl(source, params);
     const data = await NetworkService.fetchJson<any>(url, useProxy);
-    if (!Array.isArray(data)) return [];
+    const rawList: any[] = Array.isArray(data)
+      ? data
+      : data && typeof data === 'object' && !('user_info' in data)
+      ? Object.values(data)
+      : [];
 
-    return data.map((item: any) => {
-      const seriesId = item.series_id;
+    if (rawList.length === 0) return [];
+
+    return rawList.map((item: any) => {
+      const seriesId = item.series_id ?? item.id;
 
       return {
         id: `${source.id}-series-${seriesId}`,
         num: item.num,
-        name: item.name || item.title || 'Serie',
+        name: item.name || item.title || item.series_name || 'Serie',
         streamType: 'series',
         url: '', // Loaded when episode selected
-        logo: item.cover || item.stream_icon || '',
-        group: item.category_name || 'Series',
+        logo: item.cover || item.stream_icon || item.poster || '',
+        group: item.category_name || item.category_id || 'Series',
         streamId: seriesId,
         sourceId: source.id,
         rating: item.rating_5based || item.rating || '',
@@ -210,7 +243,7 @@ export class XtreamService {
         cast: item.cast || '',
         director: item.director || '',
         genre: item.genre || '',
-        releaseDate: item.releaseDate || item.year || '',
+        releaseDate: item.releaseDate || item.release_date || item.year || '',
         backdrop_path: item.backdrop_path || [],
       };
     });

@@ -299,7 +299,7 @@ export default function App() {
       />
 
       {/* Main Body */}
-      <div className="flex-1 flex overflow-hidden pb-14 lg:pb-0">
+      <div className="flex-1 flex min-h-0 overflow-hidden pb-14 lg:pb-0">
         {/* Navigation Sidebar */}
         <Navigation
           activeTab={activeTab}
@@ -315,7 +315,7 @@ export default function App() {
         />
 
         {/* Dynamic Tab Content */}
-        <main className="flex-1 flex flex-col overflow-hidden relative">
+        <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
           {/* TAB 1: En Vivo (Live TV) */}
           {activeTab === 'live' && (
             <LiveTVView

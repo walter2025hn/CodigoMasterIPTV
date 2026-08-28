@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Search,
   Radio,
@@ -9,6 +9,7 @@ import {
   Sparkles,
   Flame,
   Volume2,
+  ChevronDown,
 } from 'lucide-react';
 import { ChannelItem, UserSettings } from '../../types/iptv';
 import { VideoPlayer } from '../Player/VideoPlayer';
@@ -25,6 +26,8 @@ interface LiveTVViewProps {
   searchQuery: string;
 }
 
+const ITEMS_PER_PAGE = 50;
+
 export const LiveTVView: React.FC<LiveTVViewProps> = ({
   channels,
   currentChannel,
@@ -38,6 +41,12 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [categorySearch, setCategorySearch] = useState<string>('');
+  const [visibleCount, setVisibleCount] = useState<number>(ITEMS_PER_PAGE);
+
+  // Reset pagination when category or search changes
+  useEffect(() => {
+    setVisibleCount(ITEMS_PER_PAGE);
+  }, [selectedCategory, searchQuery]);
 
   // Extract unique categories & counts
   const categories = useMemo(() => {
@@ -80,10 +89,23 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
     });
   }, [channels, selectedCategory, searchQuery]);
 
+  // Paginated visible channels
+  const visibleChannels = useMemo(() => {
+    return filteredChannels.slice(0, visibleCount);
+  }, [filteredChannels, visibleCount]);
+
+  const handleLoadMore = () => {
+    setVisibleCount((prev) => Math.min(prev + ITEMS_PER_PAGE, filteredChannels.length));
+  };
+
+  const handleLoadAll = () => {
+    setVisibleCount(filteredChannels.length);
+  };
+
   return (
-    <div className="flex flex-col lg:flex-row h-full gap-4 p-3 lg:p-5 overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-full gap-4 p-3 lg:p-5 overflow-y-auto lg:overflow-hidden min-h-0">
       {/* Category Sidebar */}
-      <div className="w-full lg:w-72 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3 flex flex-col shrink-0 max-h-48 lg:max-h-full overflow-hidden">
+      <div className="w-full lg:w-72 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3 flex flex-col shrink-0 max-h-52 lg:max-h-full overflow-hidden">
         <div className="flex items-center justify-between mb-2.5 px-1">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 text-indigo-400" />
@@ -140,9 +162,9 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
       </div>
 
       {/* Main Channels & Player Area */}
-      <div className="flex-1 flex flex-col xl:flex-row gap-4 overflow-hidden">
+      <div className="flex-1 flex flex-col xl:flex-row gap-4 min-h-0 overflow-y-auto xl:overflow-hidden">
         {/* Active Player Box (Mobile & Desktop View) */}
-        <div className="w-full xl:w-[60%] shrink-0 flex flex-col">
+        <div className="w-full xl:w-[58%] shrink-0 flex flex-col">
           <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black border border-zinc-800">
             <VideoPlayer
               channel={currentChannel}
@@ -189,18 +211,18 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
         </div>
 
         {/* Channel Grid / List */}
-        <div className="flex-1 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col overflow-hidden">
+        <div className="flex-1 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col min-h-0 overflow-hidden">
           <div className="flex items-center justify-between mb-3 px-1">
             <div className="flex items-center gap-2">
               <Tv className="w-4 h-4 text-indigo-400" />
               <span className="text-xs font-bold uppercase tracking-wider text-zinc-300">
-                Lista de Canales ({filteredChannels.length})
+                Canales ({visibleChannels.length} de {filteredChannels.length})
               </span>
             </div>
             {selectedCategory !== 'all' && (
               <button
                 onClick={() => setSelectedCategory('all')}
-                className="text-[11px] text-indigo-400 hover:underline"
+                className="text-[11px] text-indigo-400 hover:underline cursor-pointer"
               >
                 Ver todos
               </button>
@@ -214,79 +236,107 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
               <p className="text-xs text-zinc-500">Prueba con otra búsqueda o categoría</p>
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-2">
-              {filteredChannels.map((ch, idx) => {
-                const isPlayingThis = currentChannel?.id === ch.id;
-                const isFav = favorites.includes(ch.id);
+            <div className="flex-1 overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-2 pb-2">
+                {visibleChannels.map((ch, idx) => {
+                  const isPlayingThis = currentChannel?.id === ch.id;
+                  const isFav = favorites.includes(ch.id);
 
-                return (
-                  <div
-                    key={ch.id}
-                    onClick={() => onSelectChannel(ch)}
-                    className={`group relative flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
-                      isPlayingThis
-                        ? 'bg-indigo-600/20 border-indigo-500/50 shadow-md shadow-indigo-500/10'
-                        : 'bg-zinc-950/60 border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-900/80'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {/* Logo or Icon */}
-                      <div className="relative w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 overflow-hidden p-1">
-                        {ch.logo ? (
-                          <img
-                            src={ch.logo}
-                            alt={ch.name}
-                            className="w-full h-full object-contain"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        ) : null}
-                        <Tv className="w-4 h-4 text-zinc-500 absolute" />
-                        {isPlayingThis && (
-                          <div className="absolute inset-0 bg-indigo-600/60 backdrop-blur-xs flex items-center justify-center">
-                            <Volume2 className="w-4 h-4 text-white animate-bounce" />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Channel Text */}
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] font-mono font-bold text-zinc-500">
-                            {idx + 1}.
-                          </span>
-                          <h4
-                            className={`text-xs font-bold truncate ${
-                              isPlayingThis ? 'text-indigo-300' : 'text-zinc-200 group-hover:text-white'
-                            }`}
-                          >
-                            {ch.name}
-                          </h4>
+                  return (
+                    <div
+                      key={ch.id}
+                      onClick={() => onSelectChannel(ch)}
+                      className={`group relative flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
+                        isPlayingThis
+                          ? 'bg-indigo-600/20 border-indigo-500/50 shadow-md shadow-indigo-500/10'
+                          : 'bg-zinc-950/60 border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-900/80'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Logo or Icon */}
+                        <div className="relative w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 overflow-hidden p-1">
+                          {ch.logo ? (
+                            <img
+                              src={ch.logo}
+                              alt={ch.name}
+                              className="w-full h-full object-contain"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          ) : null}
+                          <Tv className="w-4 h-4 text-zinc-500 absolute" />
+                          {isPlayingThis && (
+                            <div className="absolute inset-0 bg-indigo-600/60 backdrop-blur-xs flex items-center justify-center">
+                              <Volume2 className="w-4 h-4 text-white animate-bounce" />
+                            </div>
+                          )}
                         </div>
-                        <p className="text-[11px] text-zinc-500 truncate">{ch.group}</p>
+
+                        {/* Channel Text */}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] font-mono font-bold text-zinc-500">
+                              {idx + 1}.
+                            </span>
+                            <h4
+                              className={`text-xs font-bold truncate ${
+                                isPlayingThis ? 'text-indigo-300' : 'text-zinc-200 group-hover:text-white'
+                              }`}
+                            >
+                              {ch.name}
+                            </h4>
+                          </div>
+                          <p className="text-[11px] text-zinc-500 truncate">{ch.group}</p>
+                        </div>
+                      </div>
+
+                      {/* Action buttons on card */}
+                      <div className="flex items-center gap-1 shrink-0 ml-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleFavorite(ch);
+                          }}
+                          className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                            isFav
+                              ? 'text-rose-400 hover:bg-rose-500/20'
+                              : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'
+                          }`}
+                        >
+                          <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-rose-400' : ''}`} />
+                        </button>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
 
-                    {/* Action buttons on card */}
-                    <div className="flex items-center gap-1 shrink-0 ml-2">
+              {/* Load more if channels exceed visibleCount */}
+              {filteredChannels.length > visibleCount && (
+                <div className="py-3 flex flex-col items-center justify-center gap-2 border-t border-zinc-800/80 mt-2">
+                  <p className="text-xs text-zinc-400">
+                    Mostrando {visibleChannels.length} de {filteredChannels.length} canales
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleLoadMore}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <span>Cargar +50 canales</span>
+                      <ChevronDown className="w-4 h-4" />
+                    </button>
+                    {filteredChannels.length > visibleCount + 50 && (
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleFavorite(ch);
-                        }}
-                        className={`p-1.5 rounded-lg transition-all ${
-                          isFav
-                            ? 'text-rose-400 hover:bg-rose-500/20'
-                            : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'
-                        }`}
+                        onClick={handleLoadAll}
+                        className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition-all cursor-pointer"
                       >
-                        <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-rose-400' : ''}`} />
+                        Cargar Todos
                       </button>
-                    </div>
+                    )}
                   </div>
-                );
-              })}
+                </div>
+              )}
             </div>
           )}
         </div>

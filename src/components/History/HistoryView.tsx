@@ -32,7 +32,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   };
 
   return (
-    <div className="flex-1 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-4 lg:p-6 flex flex-col overflow-hidden m-3 lg:m-5">
+    <div className="flex-1 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-4 lg:p-6 flex flex-col min-h-0 overflow-y-auto lg:overflow-hidden m-3 lg:m-5">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-3">
