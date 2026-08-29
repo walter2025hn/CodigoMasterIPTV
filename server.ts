@@ -51,11 +51,15 @@ async function startServer() {
         const client = isHttps ? https : http;
         const agent = isHttps ? httpsAgent : httpAgent;
 
+        const userAgent =
+          (req.headers["user-agent"] as string && !req.headers["user-agent"].includes("Mozilla"))
+            ? (req.headers["user-agent"] as string)
+            : "IPTVSmartersPro/3.1.5 (Linux; Android 12) ExoPlayerLib/2.18.1";
+
         const headers: Record<string, string> = {
-          "User-Agent":
-            (req.headers["user-agent"] as string) ||
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 IPTVPlayer/2.0",
+          "User-Agent": userAgent,
           Accept: "*/*",
+          Connection: "keep-alive",
         };
 
         if (req.headers["range"]) {
@@ -69,9 +73,15 @@ async function startServer() {
             headers,
             agent,
             rejectUnauthorized: false, // Allows self-signed IPTV stream certs
-            timeout: 30000,
+            timeout: 25000,
           },
           (proxyRes) => {
+            // Once data starts flowing, disable socket timeout so full movies/series stream without interruption
+            request.setTimeout(0);
+            if (res.socket) {
+              res.socket.setTimeout(0);
+            }
+
             // Follow HTTP 301, 302, 303, 307, 308 redirects automatically on server-side
             if (
               proxyRes.statusCode &&
@@ -92,12 +102,72 @@ async function startServer() {
               "Content-Length, Content-Range, Accept-Ranges, Content-Type, Content-Disposition"
             );
 
-            // Forward video/audio content type or infer appropriate mime
-            const contentType = proxyRes.headers["content-type"];
+            const contentType = proxyRes.headers["content-type"] || "";
+            const isM3u8 =
+              urlToFetch.includes(".m3u8") ||
+              contentType.includes("application/vnd.apple.mpegurl") ||
+              contentType.includes("application/x-mpegurl") ||
+              contentType.includes("audio/x-mpegurl") ||
+              contentType.includes("vnd.apple.mpegurl");
+
+            if (proxyRes.headers["content-range"]) {
+              res.setHeader("Content-Range", proxyRes.headers["content-range"]);
+            }
+            if (proxyRes.headers["accept-ranges"]) {
+              res.setHeader("Accept-Ranges", proxyRes.headers["accept-ranges"]);
+            } else {
+              res.setHeader("Accept-Ranges", "bytes");
+            }
+
+            // If it is an M3U8 playlist, buffer and rewrite relative chunk URLs to proxy URLs
+            if (isM3u8) {
+              res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+              res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+              const chunks: Buffer[] = [];
+              proxyRes.on("data", (chunk) => chunks.push(chunk));
+              proxyRes.on("end", () => {
+                const bodyStr = Buffer.concat(chunks).toString("utf-8");
+                if (bodyStr.trim().startsWith("#EXTM3U")) {
+                  // Resolve relative URLs in playlist
+                  const parentUrl = urlToFetch.substring(0, urlToFetch.lastIndexOf("/") + 1);
+                  const lines = bodyStr.split("\n");
+                  const rewrittenLines = lines.map((line) => {
+                    const trimmed = line.trim();
+                    if (!trimmed || trimmed.startsWith("#")) {
+                      // Check for URI in tags like #EXT-X-KEY or #EXT-X-MAP
+                      if (trimmed.includes('URI="')) {
+                        return trimmed.replace(/URI="([^"]+)"/g, (match, uri) => {
+                          const absUri = uri.startsWith("http://") || uri.startsWith("https://")
+                            ? uri
+                            : new URL(uri, parentUrl).toString();
+                          return `URI="/api/proxy?url=${encodeURIComponent(absUri)}"`;
+                        });
+                      }
+                      return line;
+                    }
+                    // This is a segment or sub-playlist URL
+                    const absoluteSegmentUrl =
+                      trimmed.startsWith("http://") || trimmed.startsWith("https://")
+                        ? trimmed
+                        : new URL(trimmed, parentUrl).toString();
+                    return `/api/proxy?url=${encodeURIComponent(absoluteSegmentUrl)}`;
+                  });
+
+                  const finalPlaylist = rewrittenLines.join("\n");
+                  res.setHeader("Content-Length", Buffer.byteLength(finalPlaylist));
+                  res.status(proxyRes.statusCode || 200).send(finalPlaylist);
+                } else {
+                  // Not an EXTM3U body, send as binary/standard stream
+                  res.setHeader("Content-Length", Buffer.concat(chunks).length);
+                  res.status(proxyRes.statusCode || 200).end(Buffer.concat(chunks));
+                }
+              });
+              return;
+            }
+
+            // Forward video/audio content type or infer appropriate mime for binary streaming
             if (contentType && contentType !== "application/octet-stream") {
               res.setHeader("Content-Type", contentType);
-            } else if (urlToFetch.includes(".m3u8")) {
-              res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
             } else if (urlToFetch.includes(".ts")) {
               res.setHeader("Content-Type", "video/mp2t");
             } else if (urlToFetch.includes(".mp4")) {
@@ -110,14 +180,6 @@ async function startServer() {
 
             if (proxyRes.headers["content-length"]) {
               res.setHeader("Content-Length", proxyRes.headers["content-length"]);
-            }
-            if (proxyRes.headers["content-range"]) {
-              res.setHeader("Content-Range", proxyRes.headers["content-range"]);
-            }
-            if (proxyRes.headers["accept-ranges"]) {
-              res.setHeader("Accept-Ranges", proxyRes.headers["accept-ranges"]);
-            } else {
-              res.setHeader("Accept-Ranges", "bytes");
             }
 
             res.status(proxyRes.statusCode || 200);

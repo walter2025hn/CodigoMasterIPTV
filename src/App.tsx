@@ -399,6 +399,7 @@ export default function App() {
               onNextChannel={handleNextChannel}
               onPrevChannel={handlePrevChannel}
               searchQuery={searchQuery}
+              onOpenModal={(ch) => handlePlayItem(ch, undefined, undefined, undefined, true)}
             />
           )}
 

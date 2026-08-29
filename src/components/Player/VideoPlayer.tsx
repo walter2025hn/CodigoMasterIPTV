@@ -21,6 +21,10 @@ import {
   Maximize2,
   RefreshCw,
   Zap,
+  FastForward,
+  Rewind,
+  Gauge,
+  ShieldCheck,
 } from 'lucide-react';
 import { ChannelItem, UserSettings } from '../../types/iptv';
 import { NetworkService } from '../../services/networkService';
@@ -59,8 +63,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [aspectRatio, setAspectRatio] = useState<'auto' | '16:9' | '4:3' | 'fill' | 'contain'>(
     settings.defaultAspectRatio || 'auto'
   );
+  const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
+  const [bufferedAhead, setBufferedAhead] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [hasError, setHasError] = useState<string | null>(null);
   const [showControls, setShowControls] = useState<boolean>(true);
@@ -75,11 +81,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [currentLevel, setCurrentLevel] = useState<number>(-1); // -1 is Auto
   const [audioTracks, setAudioTracks] = useState<{ id: number; name: string }[]>([]);
   const [currentAudioTrack, setCurrentAudioTrack] = useState<number>(0);
-  const [isProxyUsed, setIsProxyUsed] = useState<boolean>(
-    settings.useProxy || (!NetworkService.isNative() && typeof window !== 'undefined' && window.location.protocol === 'https:')
-  );
 
-  // Refs for 3-second watchdog and stall detection
+  // Connection mode (Proxy vs Direct)
+  const [isProxyUsed, setIsProxyUsed] = useState<boolean>(() => {
+    if (NetworkService.isNative()) return false;
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:') return true;
+    return settings.useProxy ?? false;
+  });
+
+  // Alternative extension for VOD retries (.mp4, .mkv, .ts, .m3u8)
+  const [customExtension, setCustomExtension] = useState<string | null>(null);
+
+  // Refs for watchdog and stall detection
   const isUserPausedRef = useRef<boolean>(false);
   const lastPlaybackPosRef = useRef<number>(0);
   const stallCountRef = useRef<number>(0);
@@ -88,18 +101,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const streamLoadTimestampRef = useRef<number>(Date.now());
   const lastRecoveryTimeRef = useRef<number>(0);
 
-  // Determine stream URL with proxy fallback
+  // Calculate actual stream URL with proxy & custom extension override
   const getStreamUrl = useCallback(
-    (targetUrl: string, useProxy: boolean): string => {
+    (targetUrl: string, useProxy: boolean, extOverride?: string | null): string => {
       if (!targetUrl) return '';
-      return NetworkService.getStreamUrl(targetUrl, useProxy);
+      let url = targetUrl;
+      if (extOverride) {
+        url = url.replace(/\.(mp4|mkv|ts|m3u8|avi)(\?.*)?$/i, `.${extOverride}$2`);
+      }
+      return NetworkService.getStreamUrl(url, useProxy);
     },
     []
   );
 
   // Core stream loader
   const loadStream = useCallback(
-    (targetUrl: string, useProxy: boolean, resumeTime?: number) => {
+    (targetUrl: string, useProxy: boolean, resumeTime?: number, extOverride?: string | null, forceEngine?: 'hls' | 'native') => {
       const video = videoRef.current;
       if (!video || !targetUrl) return;
 
@@ -120,36 +137,50 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         hlsRef.current = null;
       }
 
-      const streamUrl = getStreamUrl(targetUrl, useProxy);
+      const streamUrl = getStreamUrl(targetUrl, useProxy, extOverride);
       const isLive = channel?.streamType === 'live' || !channel?.streamType;
       const isVod = channel?.streamType === 'movie' || channel?.streamType === 'series';
 
-      // Check if URL suggests HLS or Live TS stream
-      const isHlsCandidate =
+      // Determine whether to use HLS.js or native HTML5 video
+      // For Live: default to HLS.js
+      // For VOD: if .m3u8, .ts, or forceEngine === 'hls', use HLS.js; otherwise native video first with Hls.js fallback
+      const wantsHls =
+        forceEngine === 'hls' ||
         targetUrl.toLowerCase().includes('.m3u8') ||
+        (extOverride === 'm3u8' || extOverride === 'ts') ||
         targetUrl.toLowerCase().includes('/live/') ||
         (isLive && !targetUrl.toLowerCase().endsWith('.mp4'));
 
-      if (isHlsCandidate && Hls.isSupported()) {
-        const hls = new Hls({
+      if (wantsHls && Hls.isSupported() && forceEngine !== 'native') {
+        const hlsConfig: any = {
           enableWorker: true,
           lowLatencyMode: false,
-          backBufferLength: 60,
-          maxBufferLength: Math.max(settings.bufferLength || 30, 45),
-          maxMaxBufferLength: 90,
-          maxBufferSize: 60 * 1000 * 1000,
+          backBufferLength: isLive ? 90 : 30,
+          maxBufferLength: isLive ? Math.max(settings.bufferLength || 35, 45) : 40,
+          maxMaxBufferLength: isLive ? 120 : 80,
+          maxBufferSize: 64 * 1024 * 1024,
           highBufferWatchdogPeriod: 2,
-          nudgeOffset: 0.2,
-          nudgeMaxRetry: 8,
-          maxBufferHole: 0.5,
+          nudgeOffset: 0.5,
+          nudgeMaxRetry: 10,
+          maxBufferHole: 0.8,
           fragLoadingTimeOut: 20000,
           manifestLoadingTimeOut: 20000,
           levelLoadingTimeOut: 20000,
-          xhrSetup: (xhr) => {
+          fragLoadingMaxRetry: 6,
+          manifestLoadingMaxRetry: 6,
+          levelLoadingMaxRetry: 6,
+          xhrSetup: (xhr: XMLHttpRequest) => {
             xhr.withCredentials = false;
           },
-        });
+        };
 
+        if (isLive) {
+          hlsConfig.liveSyncDuration = 20; // Precarga 20 segundos para Live TV anti-cortes
+          hlsConfig.liveMaxLatencyDuration = 40;
+          hlsConfig.liveDurationInfinity = true;
+        }
+
+        const hls = new Hls(hlsConfig);
         hlsRef.current = hls;
         hls.loadSource(streamUrl);
         hls.attachMedia(video);
@@ -188,14 +219,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             console.warn('Hls fatal error occurred:', data.type, data.details);
             consecutiveErrorsRef.current += 1;
 
+            if (isVod && consecutiveErrorsRef.current <= 2) {
+              // If HLS failed for VOD, fallback to native direct video (.mp4)
+              console.log('HLS failed for VOD, falling back to direct native video...');
+              loadStream(targetUrl, useProxy, resumeTime, extOverride, 'native');
+              return;
+            }
+
             switch (data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
                 if (!useProxy && !NetworkService.isNative()) {
                   console.log('Network error: Auto-switching to CORS Proxy...');
                   setIsProxyUsed(true);
-                  loadStream(targetUrl, true, resumeTime);
+                  loadStream(targetUrl, true, resumeTime, extOverride);
                 } else if (consecutiveErrorsRef.current < 5) {
-                  // Silent auto-retry network after short backoff
                   setIsAutoReconnecting(true);
                   setTimeout(() => {
                     if (hlsRef.current) {
@@ -217,7 +254,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               default:
                 if (consecutiveErrorsRef.current < 4) {
                   setIsAutoReconnecting(true);
-                  setTimeout(() => loadStream(targetUrl, useProxy, resumeTime), 1200);
+                  setTimeout(() => loadStream(targetUrl, useProxy, resumeTime, extOverride), 1200);
                 } else {
                   setHasError('No se pudo decodificar la transmisión.');
                   setIsLoading(false);
@@ -227,7 +264,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           }
         });
       } else {
-        // Direct Native / HTML5 playback (MP4, MKV, WebM, or Native Safari/Android)
+        // Direct Native / HTML5 playback (MP4, MKV, WebM)
         video.src = streamUrl;
         video.load();
 
@@ -235,6 +272,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           video.currentTime = resumeTime;
         }
 
+        // Handle play attempt safely
         if (!isUserPausedRef.current) {
           video
             .play()
@@ -245,12 +283,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               consecutiveErrorsRef.current = 0;
             })
             .catch(() => {
-              // Wait for user interaction or canplay event
               setIsPlaying(false);
-              setIsLoading(false);
             });
-        } else {
-          setIsLoading(false);
         }
       }
     },
@@ -265,6 +299,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     lastPlaybackPosRef.current = 0;
     stallCountRef.current = 0;
     consecutiveErrorsRef.current = 0;
+    setCustomExtension(null);
     setIsAutoReconnecting(false);
 
     loadStream(channel.url, isProxyUsed);
@@ -296,8 +331,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         return;
       }
 
-      // Initial grace period: 7s after stream load to allow buffer build
-      if (Date.now() - streamLoadTimestampRef.current < 7000) {
+      // Initial grace period: 6s after stream load to allow initial buffer
+      if (Date.now() - streamLoadTimestampRef.current < 6000) {
         return;
       }
 
@@ -325,7 +360,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       stallCountRef.current += 1;
 
       // Only attempt active recovery after 2 consecutive stalled checks (6 seconds)
-      // to avoid triggering false alarms during brief 1-second keyframe switches
       if (stallCountRef.current >= 2 && !isHandlingRecoveryRef.current) {
         const now = Date.now();
         if (now - lastRecoveryTimeRef.current < 6000) {
@@ -345,14 +379,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           if (stallCountRef.current === 2) {
             try {
               hlsRef.current.recoverMediaError();
-              video.currentTime += 0.2; // soft nudge over buffer gap
+              video.currentTime += 0.3; // soft nudge over buffer gap
               video.play().catch(() => {});
             } catch {
               // fallback to loadSource
             }
           } else {
             // Stage 2 Recovery: Reload fresh live playlist with cache-buster
-            const baseUrl = getStreamUrl(channel.url, isProxyUsed);
+            const baseUrl = getStreamUrl(channel.url, isProxyUsed, customExtension);
             const freshUrl = isLive
               ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`
               : baseUrl;
@@ -366,13 +400,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           if (stallCountRef.current === 2) {
             video.play().catch(() => {});
           } else {
-            // If direct native playback has stalled repeatedly on VOD,
-            // try demuxing through HLS.js or reload stream
+            // If direct native playback stalled on VOD, fallback to Hls.js demuxer or reload
             if (Hls.isSupported() && !hlsRef.current) {
               console.log('[Watchdog] VOD stall: Attempting Hls.js fallback engine...');
-              loadStream(channel.url, isProxyUsed, currentProgress);
+              loadStream(channel.url, isProxyUsed, currentProgress, customExtension);
             } else {
-              const baseUrl = getStreamUrl(channel.url, isProxyUsed);
+              const baseUrl = getStreamUrl(channel.url, isProxyUsed, customExtension);
               video.src = baseUrl;
               video.load();
               if (currentProgress > 0) {
@@ -390,9 +423,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }, 3000);
 
     return () => clearInterval(watchdogInterval);
-  }, [channel?.id, channel?.url, channel?.streamType, getStreamUrl, isProxyUsed, loadStream]);
+  }, [channel?.id, channel?.url, channel?.streamType, customExtension, getStreamUrl, isProxyUsed, loadStream]);
 
-  // Video Element Events
+  // Video Element Events & Buffer Calculations
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -400,13 +433,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const onPlay = () => {
       setIsPlaying(true);
       isUserPausedRef.current = false;
+      setIsLoading(false);
     };
     const onPause = () => {
       setIsPlaying(false);
       setIsLoading(false);
     };
     const onWaiting = () => {
-      // Only show spinner if video has never started or is stalled >1s
       if (video.currentTime === 0) {
         setIsLoading(true);
       }
@@ -422,11 +455,27 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const onLoadedData = () => {
       setIsLoading(false);
     };
+    const onProgressEvent = () => {
+      // Calculate how many seconds of buffer are ready ahead of currentTime
+      if (video.buffered.length > 0) {
+        for (let i = 0; i < video.buffered.length; i++) {
+          if (
+            video.buffered.start(i) <= video.currentTime &&
+            video.buffered.end(i) >= video.currentTime
+          ) {
+            const ahead = video.buffered.end(i) - video.currentTime;
+            setBufferedAhead(Math.round(ahead));
+            break;
+          }
+        }
+      }
+    };
     const onTimeUpdate = () => {
       setCurrentTime(video.currentTime);
       if (video.currentTime > 0) {
         setIsLoading(false);
       }
+      onProgressEvent();
       if (onProgress) {
         onProgress(video.currentTime, video.duration || 0);
       }
@@ -443,14 +492,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         console.log('Direct playback error: auto-switching to proxy...');
         setIsProxyUsed(true);
         if (channel?.url) {
-          loadStream(channel.url, true, video.currentTime);
+          loadStream(channel.url, true, video.currentTime, customExtension);
         }
       } else if (hlsRef.current === null && Hls.isSupported() && channel?.url) {
         // If native video failed on VOD (e.g. MKV/TS container), try Hls.js demuxer!
         console.log('Trying HLS.js engine fallback for VOD container...');
-        loadStream(channel.url, isProxyUsed, video.currentTime);
+        loadStream(channel.url, isProxyUsed, video.currentTime, customExtension);
       } else {
-        // Only show error overlay if consecutive retries fail
         consecutiveErrorsRef.current += 1;
         if (consecutiveErrorsRef.current >= 3) {
           setHasError('Error al reproducir el flujo multimedia.');
@@ -459,7 +507,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           setIsAutoReconnecting(true);
           setTimeout(() => {
             if (channel?.url) {
-              loadStream(channel.url, isProxyUsed, video.currentTime);
+              loadStream(channel.url, isProxyUsed, video.currentTime, customExtension);
             }
           }, 1500);
         }
@@ -472,6 +520,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     video.addEventListener('playing', onPlaying);
     video.addEventListener('canplay', onCanPlay);
     video.addEventListener('loadeddata', onLoadedData);
+    video.addEventListener('progress', onProgressEvent);
     video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('loadedmetadata', onLoadedMetadata);
     video.addEventListener('error', onError);
@@ -483,11 +532,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('canplay', onCanPlay);
       video.removeEventListener('loadeddata', onLoadedData);
+      video.removeEventListener('progress', onProgressEvent);
       video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('loadedmetadata', onLoadedMetadata);
       video.removeEventListener('error', onError);
     };
-  }, [channel?.url, isProxyUsed, loadStream, onProgress]);
+  }, [channel?.url, customExtension, isProxyUsed, loadStream, onProgress]);
 
   // Fullscreen change listener
   useEffect(() => {
@@ -577,6 +627,30 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     lastPlaybackPosRef.current = time;
   };
 
+  // Jump forward/backward
+  const handleSkip = (seconds: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = Math.max(0, Math.min(video.duration || 0, video.currentTime + seconds));
+  };
+
+  // Playback Rate
+  const handleRateChange = (rate: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.playbackRate = rate;
+    setPlaybackRate(rate);
+  };
+
+  // Manual Resync / Refresh
+  const handleForceResync = () => {
+    if (!channel?.url) return;
+    setIsAutoReconnecting(true);
+    const pos = videoRef.current?.currentTime || 0;
+    loadStream(channel.url, isProxyUsed, channel.streamType === 'live' ? 0 : pos, customExtension);
+    setTimeout(() => setIsAutoReconnecting(false), 2000);
+  };
+
   const handleLevelChange = (levelId: number) => {
     if (hlsRef.current) {
       hlsRef.current.currentLevel = levelId;
@@ -625,13 +699,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         case 'ArrowRight':
           if (channel?.streamType !== 'live' && videoRef.current) {
             e.preventDefault();
-            videoRef.current.currentTime += 10;
+            handleSkip(10);
           }
           break;
         case 'ArrowLeft':
           if (channel?.streamType !== 'live' && videoRef.current) {
             e.preventDefault();
-            videoRef.current.currentTime -= 10;
+            handleSkip(-10);
           }
           break;
         case 'PageUp':
@@ -696,6 +770,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     );
   }
 
+  const isLive = channel.streamType === 'live' || !channel.streamType;
+
   return (
     <div
       ref={containerRef}
@@ -709,24 +785,62 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         playsInline
         preload="auto"
         onClick={togglePlay}
+        onDoubleClick={toggleFullscreen}
         className={`${getAspectRatioClass()} max-h-full cursor-pointer`}
       />
 
-      {/* Discreet, small top-positioned auto-reconnect badge */}
+      {/* Top Reconnect / Buffer Status Indicator */}
       {isAutoReconnecting && (
         <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 bg-black/85 text-amber-300/90 border border-amber-500/30 px-2.5 py-0.5 rounded-full backdrop-blur-md text-[10px] font-medium shadow-lg pointer-events-none transition-all">
           <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
-          <span>Reconectando señal...</span>
+          <span>Sincronizando señal anti-cortes...</span>
         </div>
       )}
 
-      {/* Loading Spinner */}
+      {/* Loading Spinner with format options for VOD */}
       {isLoading && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-xs z-10 pointer-events-none">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-xs z-10 p-4 text-center">
           <div className="w-10 h-10 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin mb-2.5 shadow-lg shadow-indigo-500/20" />
-          <span className="text-[11px] font-semibold tracking-wide text-zinc-200 uppercase bg-zinc-950/70 px-2.5 py-0.5 rounded-full border border-zinc-800">
-            Conectando...
+          <span className="text-[11px] font-semibold tracking-wide text-zinc-200 uppercase bg-zinc-950/80 px-3 py-1 rounded-full border border-zinc-800 mb-2">
+            {isLive ? 'Conectando señal (Búfer +20s)...' : 'Cargando película o serie...'}
           </span>
+
+          {/* Quick Format Switchers if VOD takes time */}
+          {!isLive && (
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5 bg-zinc-950/90 border border-zinc-800 p-2 rounded-xl backdrop-blur-md max-w-xs animate-in fade-in duration-300">
+              <span className="text-[9px] text-zinc-400 w-full mb-0.5 font-medium">
+                ¿Tarda en cargar? Probar formato alternativo:
+              </span>
+              {['mp4', 'm3u8', 'ts', 'mkv'].map((ext) => (
+                <button
+                  key={ext}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCustomExtension(ext);
+                    loadStream(channel.url, isProxyUsed, currentTime, ext);
+                  }}
+                  className={`px-2 py-0.5 text-[10px] font-semibold rounded-md transition-all cursor-pointer ${
+                    (customExtension || (channel.url.toLowerCase().endsWith(`.${ext}`) ? ext : 'mp4')) === ext
+                      ? 'bg-indigo-600 text-white font-bold'
+                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
+                  }`}
+                >
+                  .{ext}
+                </button>
+              ))}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const nextProxy = !isProxyUsed;
+                  setIsProxyUsed(nextProxy);
+                  loadStream(channel.url, nextProxy, currentTime, customExtension);
+                }}
+                className="px-2 py-0.5 text-[10px] font-semibold rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-all cursor-pointer"
+              >
+                {isProxyUsed ? 'Modo Directo' : 'Modo Proxy'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -745,13 +859,31 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 consecutiveErrorsRef.current = 0;
                 const nextProxy = !isProxyUsed;
                 setIsProxyUsed(nextProxy);
-                loadStream(channel.url, nextProxy, currentTime);
+                loadStream(channel.url, nextProxy, currentTime, customExtension);
               }}
               className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-indigo-600/30"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Reintentar ({isProxyUsed ? 'Conexión Directa' : 'Proxy CORS'})</span>
             </button>
+
+            {/* Extension switch retry for VOD */}
+            {!isLive && (
+              <button
+                onClick={() => {
+                  setHasError(null);
+                  const exts = ['mp4', 'mkv', 'ts', 'm3u8'];
+                  const nextExt =
+                    exts[(exts.indexOf(customExtension || 'mp4') + 1) % exts.length];
+                  setCustomExtension(nextExt);
+                  loadStream(channel.url, isProxyUsed, currentTime, nextExt);
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-fuchsia-600/30"
+              >
+                <span>Probar Formato ({customExtension || 'mp4'} ➔ alternativo)</span>
+              </button>
+            )}
+
             {onNextChannel && (
               <button
                 onClick={onNextChannel}
@@ -797,7 +929,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               <h2 className="text-xs sm:text-sm font-bold text-white leading-snug drop-shadow-md line-clamp-1 max-w-[200px] sm:max-w-md">
                 {channel.name}
               </h2>
-              {channel.streamType === 'live' ? (
+              {isLive ? (
                 <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
                   EN VIVO
@@ -820,14 +952,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
         {/* Top Right Quick Actions */}
         <div className="flex items-center gap-1.5">
-          {/* Watchdog Active Indicator */}
-          <div
-            title="Auto-Reconexión cada 3s activa contra cortes"
-            className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[9px] font-bold"
+          {/* Buffer Status / 20s Live Shield Badge */}
+          {isLive ? (
+            <div
+              title="Búfer anticipado de 20s activo para blindar la señal contra caídas"
+              className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[9px] font-bold"
+            >
+              <ShieldCheck className="w-3 h-3 text-emerald-400" />
+              <span>Búfer +20s Blindado</span>
+            </div>
+          ) : bufferedAhead > 0 ? (
+            <div className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-[9px] font-semibold">
+              <span>Búfer: +{bufferedAhead}s</span>
+            </div>
+          ) : null}
+
+          {/* Quick Resync / Refresh button */}
+          <button
+            onClick={handleForceResync}
+            className="p-1.5 rounded-xl bg-black/40 hover:bg-black/60 border border-white/10 text-zinc-300 hover:text-white transition-all cursor-pointer"
+            title="Refrescar señal y limpiar búfer"
           >
-            <Zap className="w-2.5 h-2.5 text-emerald-400 animate-pulse" />
-            <span>Anti-Cortes 3s</span>
-          </div>
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
 
           {/* Favorite Toggle */}
           <button
@@ -840,6 +987,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             title={isFavorite ? 'Quitar de Favoritos' : 'Añadir a Favoritos'}
           >
             <Heart className={`w-3.5 h-3.5 ${isFavorite ? 'fill-rose-400' : ''}`} />
+          </button>
+
+          {/* Quick Top-Right Fullscreen Toggle */}
+          <button
+            onClick={toggleFullscreen}
+            className="p-1.5 rounded-xl bg-black/40 hover:bg-black/60 border border-white/10 text-zinc-300 hover:text-white transition-all cursor-pointer"
+            title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+          >
+            {isFullscreen ? (
+              <Minimize className="w-3.5 h-3.5 text-indigo-400" />
+            ) : (
+              <Maximize className="w-3.5 h-3.5" />
+            )}
           </button>
 
           {/* Close button if modal or popout */}
@@ -862,18 +1022,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }`}
       >
         {/* VOD / Series Seek Bar */}
-        {channel.streamType !== 'live' && duration > 0 && (
+        {!isLive && duration > 0 && (
           <div className="space-y-1">
-            <input
-              type="range"
-              min="0"
-              max={duration}
-              value={currentTime}
-              onChange={handleSeek}
-              className="w-full h-1.5 bg-zinc-700/80 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:h-2 transition-all"
-            />
+            <div className="relative flex items-center">
+              <input
+                type="range"
+                min="0"
+                max={duration}
+                value={currentTime}
+                onChange={handleSeek}
+                className="w-full h-1.5 bg-zinc-700/80 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:h-2 transition-all"
+              />
+            </div>
             <div className="flex justify-between text-[10px] font-medium text-zinc-400 px-0.5">
               <span>{formatTime(currentTime)}</span>
+              {bufferedAhead > 0 && (
+                <span className="text-indigo-400/80 text-[9px] font-semibold">
+                  Precargado +{bufferedAhead}s
+                </span>
+              )}
               <span>{formatTime(duration)}</span>
             </div>
           </div>
@@ -881,16 +1048,28 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
         {/* Main Controls Row */}
         <div className="flex items-center justify-between gap-2 sm:gap-4 text-white">
-          {/* Left Playback & Volume Group */}
-          <div className="flex items-center gap-1.5 sm:gap-3">
-            {/* Prev Channel */}
-            {onPrevChannel && (
+          {/* Left Playback, Seek & Volume Group */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
+            {/* Prev Channel in TV */}
+            {isLive && onPrevChannel && (
               <button
                 onClick={onPrevChannel}
                 className="p-1.5 sm:p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all cursor-pointer"
                 title="Canal anterior (Page Up)"
               >
                 <ChevronLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </button>
+            )}
+
+            {/* Rewind 10s in VOD */}
+            {!isLive && (
+              <button
+                onClick={() => handleSkip(-10)}
+                className="p-1.5 sm:p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all cursor-pointer flex items-center gap-0.5 text-[10px]"
+                title="Retroceder 10 segundos (Flecha Izquierda)"
+              >
+                <Rewind className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">10s</span>
               </button>
             )}
 
@@ -907,8 +1086,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               )}
             </button>
 
-            {/* Next Channel */}
-            {onNextChannel && (
+            {/* Forward 10s in VOD */}
+            {!isLive && (
+              <button
+                onClick={() => handleSkip(10)}
+                className="p-1.5 sm:p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all cursor-pointer flex items-center gap-0.5 text-[10px]"
+                title="Adelantar 10 segundos (Flecha Derecha)"
+              >
+                <FastForward className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">10s</span>
+              </button>
+            )}
+
+            {/* Next Channel in TV */}
+            {isLive && onNextChannel && (
               <button
                 onClick={onNextChannel}
                 className="p-1.5 sm:p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-all cursor-pointer"
@@ -938,13 +1129,29 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 step="0.05"
                 value={isMuted ? 0 : volume}
                 onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
-                className="w-14 sm:w-20 h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 hidden sm:block"
+                className="w-12 sm:w-18 h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 hidden sm:block"
               />
             </div>
           </div>
 
-          {/* Right Tools Group: Ratio, PiP, Settings, Fullscreen */}
+          {/* Right Tools Group: Rate, Ratio, PiP, Settings, Fullscreen */}
           <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Playback Speed for VOD */}
+            {!isLive && (
+              <button
+                onClick={() => {
+                  const rates = [0.75, 1, 1.25, 1.5, 2];
+                  const nextIndex = (rates.indexOf(playbackRate) + 1) % rates.length;
+                  handleRateChange(rates[nextIndex]);
+                }}
+                className="px-2 py-1 sm:py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-[10px] font-semibold transition-all flex items-center gap-1 cursor-pointer"
+                title="Velocidad de reproducción"
+              >
+                <Gauge className="w-3 h-3 text-indigo-400" />
+                <span>{playbackRate}x</span>
+              </button>
+            )}
+
             {/* Aspect Ratio Switcher */}
             <div className="relative">
               <button
@@ -976,82 +1183,99 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
               <PictureInPicture className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
 
-            {/* Audio & Quality Settings Menu */}
-            {(levels.length > 0 || audioTracks.length > 0) && (
-              <div className="relative">
-                <button
-                  onClick={() => setShowSettingsMenu(!showSettingsMenu)}
-                  className={`p-1.5 sm:p-2 rounded-xl transition-all cursor-pointer ${
-                    showSettingsMenu ? 'bg-indigo-600 text-white' : 'bg-white/10 hover:bg-white/20'
-                  }`}
-                  title="Calidad y Pistas de Audio"
-                >
-                  <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                </button>
+            {/* Audio, Quality & Connection Settings Menu */}
+            <div className="relative">
+              <button
+                onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+                className={`p-1.5 sm:p-2 rounded-xl transition-all cursor-pointer ${
+                  showSettingsMenu ? 'bg-indigo-600 text-white' : 'bg-white/10 hover:bg-white/20'
+                }`}
+                title="Ajustes de flujo y calidad"
+              >
+                <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </button>
 
-                {showSettingsMenu && (
-                  <div className="absolute bottom-12 right-0 w-48 bg-zinc-900/95 backdrop-blur-md rounded-2xl border border-zinc-800 p-3 shadow-2xl space-y-3 z-30 text-xs">
-                    {/* Quality */}
-                    {levels.length > 0 && (
-                      <div>
-                        <div className="font-semibold text-zinc-400 mb-1.5 uppercase text-[10px] tracking-wider">
-                          Calidad de Video
-                        </div>
-                        <div className="space-y-1">
+              {showSettingsMenu && (
+                <div className="absolute bottom-12 right-0 w-52 bg-zinc-900/95 backdrop-blur-md rounded-2xl border border-zinc-800 p-3 shadow-2xl space-y-3 z-30 text-xs">
+                  {/* Connection Mode Toggle */}
+                  <div>
+                    <div className="font-semibold text-zinc-400 mb-1.5 uppercase text-[10px] tracking-wider">
+                      Modo de Conexión
+                    </div>
+                    <button
+                      onClick={() => {
+                        const next = !isProxyUsed;
+                        setIsProxyUsed(next);
+                        setShowSettingsMenu(false);
+                        loadStream(channel.url, next, currentTime, customExtension);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 flex items-center justify-between text-[11px]"
+                    >
+                      <span>{isProxyUsed ? 'Proxy CORS (Activo)' : 'Conexión Directa'}</span>
+                      <span className="text-[10px] text-indigo-400 font-bold">Cambiar</span>
+                    </button>
+                  </div>
+
+                  {/* Quality levels if available */}
+                  {levels.length > 0 && (
+                    <div className="border-t border-zinc-800 pt-2">
+                      <div className="font-semibold text-zinc-400 mb-1.5 uppercase text-[10px] tracking-wider">
+                        Calidad de Video
+                      </div>
+                      <div className="space-y-1 max-h-28 overflow-y-auto">
+                        <button
+                          onClick={() => handleLevelChange(-1)}
+                          className={`w-full text-left px-2 py-1 rounded-lg ${
+                            currentLevel === -1
+                              ? 'bg-indigo-600 text-white font-bold'
+                              : 'text-zinc-300 hover:bg-zinc-800'
+                          }`}
+                        >
+                          Automática (Buffer +20s)
+                        </button>
+                        {levels.map((lvl) => (
                           <button
-                            onClick={() => handleLevelChange(-1)}
+                            key={lvl.id}
+                            onClick={() => handleLevelChange(lvl.id)}
                             className={`w-full text-left px-2 py-1 rounded-lg ${
-                              currentLevel === -1
+                              currentLevel === lvl.id
                                 ? 'bg-indigo-600 text-white font-bold'
                                 : 'text-zinc-300 hover:bg-zinc-800'
                             }`}
                           >
-                            Automática (Recomendada)
+                            {lvl.name}
                           </button>
-                          {levels.map((lvl) => (
-                            <button
-                              key={lvl.id}
-                              onClick={() => handleLevelChange(lvl.id)}
-                              className={`w-full text-left px-2 py-1 rounded-lg ${
-                                currentLevel === lvl.id
-                                  ? 'bg-indigo-600 text-white font-bold'
-                                  : 'text-zinc-300 hover:bg-zinc-800'
-                              }`}
-                            >
-                              {lvl.name}
-                            </button>
-                          ))}
-                        </div>
+                        ))}
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                    {/* Audio */}
-                    {audioTracks.length > 1 && (
-                      <div className="border-t border-zinc-800 pt-2">
-                        <div className="font-semibold text-zinc-400 mb-1.5 uppercase text-[10px] tracking-wider">
-                          Pistas de Audio
-                        </div>
-                        <div className="space-y-1">
-                          {audioTracks.map((trk) => (
-                            <button
-                              key={trk.id}
-                              onClick={() => handleAudioTrackChange(trk.id)}
-                              className={`w-full text-left px-2 py-1 rounded-lg ${
-                                currentAudioTrack === trk.id
-                                  ? 'bg-indigo-600 text-white font-bold'
-                                  : 'text-zinc-300 hover:bg-zinc-800'
-                              }`}
-                            >
-                              {trk.name}
-                            </button>
-                          ))}
-                        </div>
+                  {/* Audio tracks if available */}
+                  {audioTracks.length > 1 && (
+                    <div className="border-t border-zinc-800 pt-2">
+                      <div className="font-semibold text-zinc-400 mb-1.5 uppercase text-[10px] tracking-wider">
+                        Pistas de Audio
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+                      <div className="space-y-1 max-h-28 overflow-y-auto">
+                        {audioTracks.map((trk) => (
+                          <button
+                            key={trk.id}
+                            onClick={() => handleAudioTrackChange(trk.id)}
+                            className={`w-full text-left px-2 py-1 rounded-lg ${
+                              currentAudioTrack === trk.id
+                                ? 'bg-indigo-600 text-white font-bold'
+                                : 'text-zinc-300 hover:bg-zinc-800'
+                            }`}
+                          >
+                            {trk.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Fullscreen */}
             <button

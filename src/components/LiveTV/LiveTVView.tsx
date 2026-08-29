@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   Search,
   Radio,
@@ -10,6 +10,8 @@ import {
   Flame,
   Volume2,
   ChevronDown,
+  Maximize,
+  Maximize2,
 } from 'lucide-react';
 import { ChannelItem, UserSettings } from '../../types/iptv';
 import { VideoPlayer } from '../Player/VideoPlayer';
@@ -24,6 +26,7 @@ interface LiveTVViewProps {
   onNextChannel: () => void;
   onPrevChannel: () => void;
   searchQuery: string;
+  onOpenModal?: (channel: ChannelItem) => void;
 }
 
 const ITEMS_PER_PAGE = 50;
@@ -38,10 +41,21 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
   onNextChannel,
   onPrevChannel,
   searchQuery,
+  onOpenModal,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [categorySearch, setCategorySearch] = useState<string>('');
   const [visibleCount, setVisibleCount] = useState<number>(ITEMS_PER_PAGE);
+  const playerContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleToggleFullscreen = () => {
+    if (!playerContainerRef.current) return;
+    if (!document.fullscreenElement) {
+      playerContainerRef.current.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
 
   // Reset pagination when category or search changes
   useEffect(() => {
@@ -215,7 +229,10 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
       <div className="flex-1 flex flex-col xl:flex-row gap-4 min-h-0 lg:overflow-hidden">
         {/* Active Player Box (Mobile & Desktop View) */}
         <div className="w-full xl:w-[58%] shrink-0 flex flex-col">
-          <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black border border-zinc-800">
+          <div
+            ref={playerContainerRef}
+            className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black border border-zinc-800 relative group/liveplayer"
+          >
             <VideoPlayer
               channel={currentChannel}
               settings={settings}
@@ -228,32 +245,56 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
 
           {/* Quick channel info banner */}
           {currentChannel && (
-            <div className="mt-3 p-3.5 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl flex items-center justify-between">
-              <div className="flex items-center gap-3">
+            <div className="mt-3 p-3.5 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
                   <Radio className="w-5 h-5 animate-pulse" />
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <h4 className="text-sm font-bold text-white truncate">{currentChannel.name}</h4>
                   <p className="text-xs text-zinc-400 truncate">{currentChannel.group}</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0 ml-2">
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Fullscreen Button */}
+                <button
+                  onClick={handleToggleFullscreen}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 transition-all cursor-pointer active:scale-95"
+                  title="Poner en Pantalla Completa (F / Doble Clic)"
+                >
+                  <Maximize className="w-4 h-4" />
+                  <span>Pantalla Completa</span>
+                </button>
+
+                {/* Modal View Button */}
+                {onOpenModal && (
+                  <button
+                    onClick={() => onOpenModal(currentChannel)}
+                    className="p-2 sm:px-3 sm:py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                    title="Maximizar en ventana flotante"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5 text-zinc-400" />
+                    <span className="hidden sm:inline">Maximizar</span>
+                  </button>
+                )}
+
+                {/* Favorite Button */}
                 <button
                   onClick={() => onToggleFavorite(currentChannel)}
-                  className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  className={`px-3 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                     favorites.includes(currentChannel.id)
                       ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                      : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700'
+                      : 'bg-zinc-800/80 border-zinc-700/80 text-zinc-300 hover:bg-zinc-700'
                   }`}
+                  title={favorites.includes(currentChannel.id) ? 'Quitar de favoritos' : 'Añadir a favoritos'}
                 >
                   <Heart
                     className={`w-3.5 h-3.5 ${
                       favorites.includes(currentChannel.id) ? 'fill-rose-400' : ''
                     }`}
                   />
-                  <span>Favorito</span>
+                  <span className="hidden md:inline">Favorito</span>
                 </button>
               </div>
             </div>

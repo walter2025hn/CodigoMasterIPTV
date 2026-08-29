@@ -88,8 +88,8 @@ export const PlayerOverlayModal: React.FC<PlayerOverlayModalProps> = ({
       </div>
 
       {/* Main Video Stage */}
-      <div className="flex-1 w-full h-full p-2 sm:p-4 flex items-center justify-center overflow-hidden">
-        <div className="w-full h-full max-w-6xl max-h-[85vh] rounded-2xl overflow-hidden shadow-2xl bg-black border border-zinc-800/80">
+      <div className="flex-1 w-full h-full p-0 sm:p-4 flex items-center justify-center overflow-hidden bg-black">
+        <div className="w-full h-full sm:max-w-6xl sm:max-h-[85vh] sm:rounded-2xl overflow-hidden shadow-2xl bg-black sm:border sm:border-zinc-800/80">
           <VideoPlayer
             channel={channel}
             settings={settings}
