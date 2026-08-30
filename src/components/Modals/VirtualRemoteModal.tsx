@@ -130,22 +130,40 @@ export const VirtualRemoteModal: React.FC<VirtualRemoteModalProps> = ({
               <span className="text-[10px] font-semibold">Potencia:</span>
             </div>
             <div className="flex items-center gap-1">
-              {(['low', 'medium', 'high'] as const).map((m) => {
+              {(['potato', 'low', 'medium', 'high'] as const).map((m) => {
                 const isActive = performanceMode === m;
-                const label = m === 'low' ? 'Bajo' : m === 'medium' ? 'Medio' : 'Alto';
+                const label =
+                  m === 'potato'
+                    ? '🥔'
+                    : m === 'low'
+                    ? 'Bajo'
+                    : m === 'medium'
+                    ? 'Medio'
+                    : 'Alto';
                 return (
                   <button
                     key={m}
                     onClick={() => onChangePerformanceMode(m)}
-                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                    className={`px-1.5 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                       isActive
-                        ? m === 'low'
+                        ? m === 'potato'
+                          ? 'bg-amber-600 text-white shadow-sm'
+                          : m === 'low'
                           ? 'bg-emerald-600 text-white'
                           : m === 'medium'
                           ? 'bg-indigo-600 text-white'
                           : 'bg-purple-600 text-white'
                         : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
                     }`}
+                    title={
+                      m === 'potato'
+                        ? 'Modo Patata (500MB RAM)'
+                        : m === 'low'
+                        ? 'Modo Bajo (1GB RAM)'
+                        : m === 'medium'
+                        ? 'Modo Medio (Estándar)'
+                        : 'Modo Alto (Máxima Calidad)'
+                    }
                   >
                     {label}
                   </button>

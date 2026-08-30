@@ -10,6 +10,7 @@ import {
   HistoryItem,
   PlaylistSource,
   UserSettings,
+  PerformanceProfile,
 } from './types/iptv';
 import { StorageService, DEFAULT_DEMO_SOURCE, DEMO_CHANNELS } from './services/storageService';
 import { XtreamService } from './services/xtreamService';
@@ -18,6 +19,7 @@ import { NetworkService } from './services/networkService';
 import { Header } from './components/Header';
 import { Navigation, MainTab } from './components/Navigation';
 import { LiveTVView } from './components/LiveTV/LiveTVView';
+import { MatchesView } from './components/Matches/MatchesView';
 import { MoviesView } from './components/Movies/MoviesView';
 import { SeriesView } from './components/Series/SeriesView';
 import { FavoritesView } from './components/Favorites/FavoritesView';
@@ -64,7 +66,7 @@ export default function App() {
   const [isAccountDetailsOpen, setIsAccountDetailsOpen] = useState<boolean>(false);
   const [isVirtualRemoteOpen, setIsVirtualRemoteOpen] = useState<boolean>(false);
 
-  // Initial Load
+  // Initial Load & TV Remote Keyboard Listeners
   useEffect(() => {
     const initApp = async () => {
       const loadedSources = StorageService.getSources();
@@ -75,7 +77,19 @@ export default function App() {
 
       setFavorites(StorageService.getFavorites());
       setHistory(StorageService.getHistory());
-      setSettings(StorageService.getSettings());
+      const loadedSettings = StorageService.getSettings();
+
+      // Auto-detect Smart TV / Android TV / WebOS / Tizen / FireTV
+      const isTvDevice =
+        /smart-tv|smarttv|googletv|appletv|hbbtv|pov_tv|netcast.tv|webos|tizen|android tv|viera|roku|firetv/i.test(
+          navigator.userAgent.toLowerCase()
+        );
+      if (isTvDevice && !loadedSettings.tvRemoteMode) {
+        loadedSettings.tvRemoteMode = true;
+        StorageService.saveSettings(loadedSettings);
+      }
+
+      setSettings(loadedSettings);
 
       if (activeId) {
         await loadChannelsForSource(activeId, loadedSources);
@@ -83,6 +97,71 @@ export default function App() {
     };
     initApp();
   }, []);
+
+  // Global Smart TV Remote Control Listener (D-Pad, Back, Colors, Channels)
+  useEffect(() => {
+    const handleGlobalTvKeys = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        if (e.key === 'Escape') {
+          target.blur();
+        }
+        return;
+      }
+
+      // TV Back Keys (Escape, Android Back, Tizen 10009, WebOS 461)
+      if (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'GoBack' || e.keyCode === 10009 || e.keyCode === 461 || e.keyCode === 4) {
+        if (isPlayerModalOpen) {
+          setIsPlayerModalOpen(false);
+          e.preventDefault();
+        } else if (isSettingsOpen || isApkModalOpen || isAddSourceOpen || isVirtualRemoteOpen || isSupportModalOpen || isAccountDetailsOpen) {
+          setIsSettingsOpen(false);
+          setIsApkModalOpen(false);
+          setIsAddSourceOpen(false);
+          setIsVirtualRemoteOpen(false);
+          setIsSupportModalOpen(false);
+          setIsAccountDetailsOpen(false);
+          e.preventDefault();
+        }
+        return;
+      }
+
+      // TV Channel Up / Down
+      if (e.key === 'PageUp' || e.key === 'ChannelUp' || e.keyCode === 427 || e.keyCode === 33) {
+        handleNextChannel();
+        e.preventDefault();
+      } else if (e.key === 'PageDown' || e.key === 'ChannelDown' || e.keyCode === 428 || e.keyCode === 34) {
+        handlePrevChannel();
+        e.preventDefault();
+      }
+
+      // TV Remote Color Keys (Red, Green, Yellow, Blue)
+      if (e.key === 'ColorF0Red' || e.keyCode === 403) {
+        setActiveTab('matches');
+        e.preventDefault();
+      } else if (e.key === 'ColorF1Green' || e.keyCode === 404) {
+        setActiveTab('live');
+        e.preventDefault();
+      } else if (e.key === 'ColorF2Yellow' || e.keyCode === 405) {
+        setActiveTab('movies');
+        e.preventDefault();
+      } else if (e.key === 'ColorF3Blue' || e.keyCode === 406) {
+        setActiveTab('series');
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalTvKeys);
+    return () => window.removeEventListener('keydown', handleGlobalTvKeys);
+  }, [
+    isPlayerModalOpen,
+    isSettingsOpen,
+    isApkModalOpen,
+    isAddSourceOpen,
+    isVirtualRemoteOpen,
+    isSupportModalOpen,
+    isAccountDetailsOpen,
+  ]);
 
   // Active Source Object
   const activeSource = useMemo(() => {
@@ -368,9 +447,10 @@ export default function App() {
     }
   };
 
-  const handlePerformanceModeChange = (mode: 'low' | 'medium' | 'high') => {
+  const handlePerformanceModeChange = (mode: PerformanceProfile) => {
     let suggestedBuffer = settings.bufferLength || 30;
-    if (mode === 'low') suggestedBuffer = 15;
+    if (mode === 'potato') suggestedBuffer = 6;
+    else if (mode === 'low') suggestedBuffer = 15;
     else if (mode === 'medium') suggestedBuffer = 30;
     else if (mode === 'high') suggestedBuffer = 45;
 
@@ -385,10 +465,12 @@ export default function App() {
 
   return (
     <div
-      className={`flex flex-col h-screen w-screen bg-zinc-950 text-zinc-100 overflow-hidden font-sans select-none ${
+      className={`fixed inset-0 flex flex-col h-full w-full min-h-screen min-w-full bg-zinc-950 text-zinc-100 overflow-hidden font-sans select-none ${
         settings.tvRemoteMode ? 'tv-mode-active text-scale-tv' : ''
       } ${
-        settings.performanceMode === 'low'
+        settings.performanceMode === 'potato'
+          ? 'perf-potato potato-mode-active'
+          : settings.performanceMode === 'low'
           ? 'perf-low'
           : settings.performanceMode === 'high'
           ? 'perf-high'
@@ -424,6 +506,7 @@ export default function App() {
           onTabChange={handleTabChange}
           counts={{
             live: liveChannels.length,
+            matches: StorageService.getMatches().length,
             movies: moviesList.length,
             series: seriesList.length,
             favorites: favorites.length,
@@ -450,7 +533,16 @@ export default function App() {
             />
           )}
 
-          {/* TAB 2: Películas VOD */}
+          {/* TAB 2: Partidos y Eventos Deportivos en Vivo */}
+          {activeTab === 'matches' && (
+            <MatchesView
+              channels={channels}
+              onPlayChannel={(ch) => handlePlayItem(ch, undefined, undefined, undefined, true)}
+              settings={settings}
+            />
+          )}
+
+          {/* TAB 3: Películas VOD */}
           {activeTab === 'movies' && (
             <MoviesView
               movies={moviesList}

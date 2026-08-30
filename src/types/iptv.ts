@@ -151,7 +151,7 @@ export interface HistoryItem {
   episodeTitle?: string;
 }
 
-export type PerformanceProfile = 'low' | 'medium' | 'high';
+export type PerformanceProfile = 'potato' | 'low' | 'medium' | 'high';
 
 export type VideoQualityPreset = 'auto' | '480p' | '720p' | '1080p' | '2k' | '4k';
 

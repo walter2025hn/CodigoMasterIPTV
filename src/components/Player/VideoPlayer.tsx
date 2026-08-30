@@ -214,27 +214,34 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       if (wantsHls && Hls.isSupported() && forceEngine !== 'native') {
         const perf = settings.performanceMode || 'medium';
-        const isLowPerf = perf === 'low';
+        const isPotatoPerf = perf === 'potato';
+        const isLowPerf = perf === 'low' || isPotatoPerf;
         const isHighPerf = perf === 'high';
 
-        const customBuffer = settings.bufferLength || (isLowPerf ? 15 : isHighPerf ? 45 : 30);
+        const customBuffer = settings.bufferLength || (isPotatoPerf ? 6 : isLowPerf ? 15 : isHighPerf ? 45 : 30);
 
         const hlsConfig: any = {
-          enableWorker: !isLowPerf, // Disable worker thread on low-end single/dual-core TV boxes
+          enableWorker: !isLowPerf, // Disable worker thread on low-end single/dual-core TV boxes & 500MB devices
           lowLatencyMode: false,
           capLevelToPlayerSize: isLowPerf, // Save decoding GPU cycles on weak screens
-          backBufferLength: isLowPerf ? 10 : isHighPerf ? 60 : isLive ? 30 : 20,
-          maxBufferLength: isLowPerf ? Math.min(15, customBuffer) : customBuffer,
-          maxMaxBufferLength: isLowPerf ? 20 : isHighPerf ? 90 : 60,
-          maxBufferSize: isLowPerf ? 15 * 1024 * 1024 : isHighPerf ? 96 * 1024 * 1024 : 45 * 1024 * 1024,
+          backBufferLength: isPotatoPerf ? 0 : isLowPerf ? 10 : isHighPerf ? 60 : isLive ? 30 : 20, // 0 backBuffer on potato frees RAM immediately
+          maxBufferLength: isPotatoPerf ? 6 : isLowPerf ? Math.min(15, customBuffer) : customBuffer,
+          maxMaxBufferLength: isPotatoPerf ? 10 : isLowPerf ? 20 : isHighPerf ? 90 : 60,
+          maxBufferSize: isPotatoPerf
+            ? 4 * 1024 * 1024 // Ultralow 4MB buffer memory limit for 500MB RAM devices
+            : isLowPerf
+            ? 15 * 1024 * 1024
+            : isHighPerf
+            ? 96 * 1024 * 1024
+            : 45 * 1024 * 1024,
           highBufferWatchdogPeriod: isLowPerf ? 5 : 3,
           nudgeOffset: 0.1,
-          nudgeMaxRetry: isLowPerf ? 3 : 5,
+          nudgeMaxRetry: isPotatoPerf ? 2 : isLowPerf ? 3 : 5,
           maxBufferHole: 0.5,
-          fragLoadingTimeOut: isLowPerf ? 18000 : 25000,
+          fragLoadingTimeOut: isPotatoPerf ? 12000 : isLowPerf ? 18000 : 25000,
           manifestLoadingTimeOut: 20000,
           levelLoadingTimeOut: 20000,
-          fragLoadingMaxRetry: isLowPerf ? 6 : 10,
+          fragLoadingMaxRetry: isPotatoPerf ? 4 : isLowPerf ? 6 : 10,
           manifestLoadingMaxRetry: 10,
           levelLoadingMaxRetry: 10,
           fragLoadingRetryDelay: 1000,

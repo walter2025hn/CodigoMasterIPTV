@@ -1,7 +1,25 @@
 @import "tailwindcss";
 
 @layer base {
-  body {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html, body, #root {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background-color: #09090b !important;
+    background: #09090b !important;
+    overflow: hidden !important;
+    position: fixed !important;
+    inset: 0 !important;
+    color: #f4f4f5 !important;
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
@@ -16,9 +34,10 @@
   :focus-visible {
     outline: 3px solid #6366f1 !important;
     outline-offset: 2px !important;
-    box-shadow: 0 0 16px rgba(99, 102, 241, 0.6) !important;
-    transform: scale(1.02);
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.8) !important;
+    transform: scale(1.03);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
+    z-index: 30;
   }
 }
 
@@ -29,6 +48,11 @@
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* TV Overscan Compensation */
+.tv-overscan-safe {
+  padding: env(safe-area-inset-top, 16px) env(safe-area-inset-right, 24px) env(safe-area-inset-bottom, 20px) env(safe-area-inset-left, 24px);
 }
 
 /* Safe Area Inset Support for Mobile & TV Overscan */
@@ -101,8 +125,44 @@
 }
 
 /* =========================================================================
-   PERFORMANCE MODES: BAJO (LOW), MEDIO (MEDIUM), ALTO (HIGH)
+   PERFORMANCE MODES: PATATA (POTATO 500MB), BAJO (LOW), MEDIO (MEDIUM), ALTO (HIGH)
    ========================================================================= */
+
+/* Modo Patata 🥔 (Ultra-optimización extrema para 500MB de RAM, TV Box chinas antiguas y SoCs débiles) */
+.potato-mode-active,
+.perf-potato,
+.potato-mode-active *,
+.perf-potato * {
+  animation: none !important;
+  transition: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  filter: none !important;
+  transform: none !important;
+  will-change: auto !important;
+}
+
+.potato-mode-active .glass-panel,
+.perf-potato .glass-panel {
+  background: #0d0d11 !important;
+  border-color: #27272a !important;
+}
+
+.potato-mode-active img,
+.perf-potato img {
+  image-rendering: -webkit-optimize-contrast;
+  content-visibility: auto;
+}
+
+.potato-mode-active :focus-visible,
+.perf-potato :focus-visible {
+  outline: 3px solid #f59e0b !important;
+  outline-offset: 1px !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
 
 /* Modo Bajo (Low-end hardware, 1GB RAM TV Box, older phones) */
 .perf-low,

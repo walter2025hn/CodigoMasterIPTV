@@ -30,6 +30,58 @@ export const DEFAULT_DEMO_SOURCE: PlaylistSource = {
 };
 
 export const DEMO_CHANNELS: ChannelItem[] = [
+  // Eventos Del Día (Deportes y Partidos en Directo)
+  {
+    id: 'demo-evento-1',
+    name: 'EVENTOS 01: Real Madrid vs Manchester City (21:00)',
+    group: 'EVENTOS DEL DÍA',
+    streamType: 'live',
+    url: 'https://rbmn-live.akamaized.net/hls/live/590964/geo/none/linear/sports/manifest.m3u8',
+    logo: 'https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=150&auto=format&fit=crop&q=80',
+    sourceId: 'demo-codigo-master',
+    tvgName: 'EVENTOS 1',
+  },
+  {
+    id: 'demo-evento-2',
+    name: 'EVENTOS 02: FC Barcelona vs Bayern Múnich (20:00)',
+    group: 'EVENTOS DEL DÍA',
+    streamType: 'live',
+    url: 'https://rbmn-live.akamaized.net/hls/live/590964/geo/none/linear/sports/manifest.m3u8',
+    logo: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=150&auto=format&fit=crop&q=80',
+    sourceId: 'demo-codigo-master',
+    tvgName: 'EVENTOS 2',
+  },
+  {
+    id: 'demo-evento-3',
+    name: 'EVENTOS 03: F1 GP Carrera Principal en Vivo (15:00)',
+    group: 'EVENTOS DEL DÍA',
+    streamType: 'live',
+    url: 'https://rbmn-live.akamaized.net/hls/live/590964/geo/none/linear/sports/manifest.m3u8',
+    logo: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=150&auto=format&fit=crop&q=80',
+    sourceId: 'demo-codigo-master',
+    tvgName: 'EVENTOS 3',
+  },
+  {
+    id: 'demo-evento-4',
+    name: 'EVENTOS 04: Boca Juniors vs River Plate (21:30)',
+    group: 'EVENTOS DEL DÍA',
+    streamType: 'live',
+    url: 'https://rbmn-live.akamaized.net/hls/live/590964/geo/none/linear/sports/manifest.m3u8',
+    logo: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=150&auto=format&fit=crop&q=80',
+    sourceId: 'demo-codigo-master',
+    tvgName: 'EVENTOS 4',
+  },
+  {
+    id: 'demo-evento-5',
+    name: 'EVENTOS 05: UFC Fight Night Main Card (22:00)',
+    group: 'EVENTOS DEL DÍA',
+    streamType: 'live',
+    url: 'https://rbmn-live.akamaized.net/hls/live/590964/geo/none/linear/sports/manifest.m3u8',
+    logo: 'https://images.unsplash.com/photo-1517438322307-e67111335449?w=150&auto=format&fit=crop&q=80',
+    sourceId: 'demo-codigo-master',
+    tvgName: 'EVENTOS 5',
+  },
+
   // Live TV
   {
     id: 'demo-live-1',

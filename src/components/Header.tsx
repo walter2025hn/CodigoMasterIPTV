@@ -99,22 +99,40 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Quick Performance Switcher Mobile */}
             {onChangePerformanceMode && (
               <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg p-0.5">
-                {(['low', 'medium', 'high'] as const).map((mode) => {
+                {(['potato', 'low', 'medium', 'high'] as const).map((mode) => {
                   const isActive = performanceMode === mode;
-                  const label = mode === 'low' ? 'Bajo' : mode === 'medium' ? 'Medio' : 'Alto';
+                  const label =
+                    mode === 'potato'
+                      ? '🥔'
+                      : mode === 'low'
+                      ? 'Bajo'
+                      : mode === 'medium'
+                      ? 'Medio'
+                      : 'Alto';
                   return (
                     <button
                       key={mode}
                       onClick={() => onChangePerformanceMode(mode)}
                       className={`px-1.5 py-1 rounded text-[10px] font-bold transition-all cursor-pointer ${
                         isActive
-                          ? mode === 'low'
+                          ? mode === 'potato'
+                            ? 'bg-amber-600 text-white shadow-sm'
+                            : mode === 'low'
                             ? 'bg-emerald-600 text-white'
                             : mode === 'medium'
                             ? 'bg-indigo-600 text-white'
                             : 'bg-purple-600 text-white'
                           : 'text-zinc-400 hover:text-zinc-200'
                       }`}
+                      title={
+                        mode === 'potato'
+                          ? 'Modo Patata (500MB RAM / Ultra Ahorro)'
+                          : mode === 'low'
+                          ? 'Modo Bajo (1GB RAM)'
+                          : mode === 'medium'
+                          ? 'Modo Medio (Equilibrado)'
+                          : 'Modo Alto (Máxima Calidad)'
+                      }
                     >
                       {label}
                     </button>
@@ -158,34 +176,53 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Live Date & Time Widget (Clock & Calendar) */}
           <DateTimeWidget variant="header" />
 
-          {/* 3 POTENCIA DE LA APP OPTIONS (BAJO | MEDIO | ALTO) */}
+          {/* 4 POTENCIA DE LA APP OPTIONS (PATATA | BAJO | MEDIO | ALTO) */}
           {onChangePerformanceMode && (
             <div
-              className="hidden xl:flex items-center gap-1 bg-zinc-900/90 border border-zinc-800 rounded-xl p-1 shadow-inner"
-              title="Potencia de la app: Bajo (Dispositivos de bajos requisitos / 1GB RAM) | Medio (Estándar) | Alto (Máxima calidad)"
+              className="hidden lg:flex items-center gap-1 bg-zinc-900/90 border border-zinc-800 rounded-xl p-1 shadow-inner"
+              title="Potencia de la app: Patata (500MB RAM / TV Box ultra básica) | Bajo (1GB RAM) | Medio (Estándar) | Alto (Máxima calidad)"
             >
               <div className="flex items-center gap-1 px-1 text-zinc-400">
                 <Gauge className="w-3.5 h-3.5 text-zinc-400" />
                 <span className="text-[10px] font-semibold text-zinc-400 hidden 2xl:inline">Potencia:</span>
               </div>
 
-              {(['low', 'medium', 'high'] as const).map((mode) => {
+              {(['potato', 'low', 'medium', 'high'] as const).map((mode) => {
                 const isActive = performanceMode === mode;
-                const label = mode === 'low' ? 'Bajo' : mode === 'medium' ? 'Medio' : 'Alto';
+                const label =
+                  mode === 'potato'
+                    ? 'Patata'
+                    : mode === 'low'
+                    ? 'Bajo'
+                    : mode === 'medium'
+                    ? 'Medio'
+                    : 'Alto';
                 return (
                   <button
                     key={mode}
                     onClick={() => onChangePerformanceMode(mode)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                    className={`px-2 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
                       isActive
-                        ? mode === 'low'
+                        ? mode === 'potato'
+                          ? 'bg-amber-600/90 text-white shadow-sm shadow-amber-500/30'
+                          : mode === 'low'
                           ? 'bg-emerald-600/90 text-white shadow-sm shadow-emerald-500/20'
                           : mode === 'medium'
                           ? 'bg-indigo-600/90 text-white shadow-sm shadow-indigo-500/20'
                           : 'bg-purple-600/90 text-white shadow-sm shadow-purple-500/20'
                         : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
                     }`}
+                    title={
+                      mode === 'potato'
+                        ? 'Modo Patata (500MB RAM / Cero efectos / Máximo ahorro)'
+                        : mode === 'low'
+                        ? 'Modo Bajo (1GB RAM)'
+                        : mode === 'medium'
+                        ? 'Modo Medio (Equilibrado)'
+                        : 'Modo Alto (Máxima Calidad)'
+                    }
                   >
+                    {mode === 'potato' && <span className="text-xs">🥔</span>}
                     {mode === 'low' && <Cpu className="w-3 h-3" />}
                     {mode === 'medium' && <Zap className="w-3 h-3" />}
                     {mode === 'high' && <Sparkles className="w-3 h-3" />}

@@ -129,20 +129,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Gauge className="w-4 h-4 text-emerald-400" />
                 <span className="font-bold text-white text-sm">Potencia & Rendimiento</span>
               </div>
-              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-md bg-indigo-600/20 text-indigo-300 border border-indigo-500/30">
-                {currentPerf === 'low' ? 'Bajo' : currentPerf === 'medium' ? 'Medio' : 'Alto'}
+              <span className={`text-[10px] uppercase font-black px-2.5 py-0.5 rounded-md border ${
+                currentPerf === 'potato'
+                  ? 'bg-amber-600/25 text-amber-300 border-amber-500/40'
+                  : currentPerf === 'low'
+                  ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/30'
+                  : currentPerf === 'medium'
+                  ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500/30'
+                  : 'bg-purple-600/20 text-purple-300 border-purple-500/30'
+              }`}>
+                {currentPerf === 'potato' ? '🥔 Patata (500MB)' : currentPerf === 'low' ? 'Bajo' : currentPerf === 'medium' ? 'Medio' : 'Alto'}
               </span>
             </div>
             <p className="text-[11px] text-zinc-400">
               Ajusta el consumo de memoria RAM, animaciones y búfer de video según la potencia de tu dispositivo.
             </p>
 
-            {/* 3 Options: Bajo, Medio, Alto */}
-            <div className="grid grid-cols-3 gap-2 pt-1">
+            {/* 4 Options: Patata, Bajo, Medio, Alto */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+              {/* PATATA (Ultra bajo recursos / 500MB RAM) */}
+              <button
+                onClick={() => handlePerformanceChange('potato')}
+                className={`p-2.5 sm:p-3 rounded-xl border flex flex-col items-center text-center transition-all cursor-pointer ${
+                  currentPerf === 'potato'
+                    ? 'bg-amber-950/50 border-amber-500 text-white shadow-lg shadow-amber-950/60 scale-[1.02]'
+                    : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-850'
+                }`}
+              >
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center mb-1.5 text-base ${
+                    currentPerf === 'potato' ? 'bg-amber-500/25 text-amber-300' : 'bg-zinc-800 text-zinc-400'
+                  }`}
+                >
+                  🥔
+                </div>
+                <span className="font-black text-xs text-amber-300">Patata</span>
+                <span className="text-[9px] text-amber-400 font-bold mt-0.5">500MB RAM</span>
+                <span className="text-[9px] text-zinc-500 mt-1 leading-tight">
+                  TV Box 512MB, 0 lag & 0 efectos
+                </span>
+              </button>
+
               {/* BAJO */}
               <button
                 onClick={() => handlePerformanceChange('low')}
-                className={`p-3 rounded-xl border flex flex-col items-center text-center transition-all cursor-pointer ${
+                className={`p-2.5 sm:p-3 rounded-xl border flex flex-col items-center text-center transition-all cursor-pointer ${
                   currentPerf === 'low'
                     ? 'bg-emerald-950/40 border-emerald-500 text-white shadow-lg shadow-emerald-950/50 scale-[1.02]'
                     : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-850'
@@ -156,7 +187,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <Cpu className="w-4 h-4" />
                 </div>
                 <span className="font-bold text-xs text-white">Bajo</span>
-                <span className="text-[9px] text-emerald-400 font-semibold mt-0.5">Ahorro RAM</span>
+                <span className="text-[9px] text-emerald-400 font-semibold mt-0.5">Ahorro 1GB</span>
                 <span className="text-[9px] text-zinc-500 mt-1 leading-tight">
                   TV Box 1GB & Móviles básicos
                 </span>
@@ -165,7 +196,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* MEDIO */}
               <button
                 onClick={() => handlePerformanceChange('medium')}
-                className={`p-3 rounded-xl border flex flex-col items-center text-center transition-all cursor-pointer ${
+                className={`p-2.5 sm:p-3 rounded-xl border flex flex-col items-center text-center transition-all cursor-pointer ${
                   currentPerf === 'medium'
                     ? 'bg-indigo-950/40 border-indigo-500 text-white shadow-lg shadow-indigo-950/50 scale-[1.02]'
                     : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-850'
@@ -188,7 +219,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* ALTO */}
               <button
                 onClick={() => handlePerformanceChange('high')}
-                className={`p-3 rounded-xl border flex flex-col items-center text-center transition-all cursor-pointer ${
+                className={`p-2.5 sm:p-3 rounded-xl border flex flex-col items-center text-center transition-all cursor-pointer ${
                   currentPerf === 'high'
                     ? 'bg-purple-950/40 border-purple-500 text-white shadow-lg shadow-purple-950/50 scale-[1.02]'
                     : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-850'

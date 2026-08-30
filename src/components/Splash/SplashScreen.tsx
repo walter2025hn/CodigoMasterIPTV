@@ -15,57 +15,67 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
   const [stage, setStage] = useState<'enter' | 'glow' | 'exit'>('enter');
 
   useEffect(() => {
-    // Dynamic duration based on device power profile
-    if (performanceMode === 'low') {
-      // Very fast, light on CPU/GPU
-      const t = setTimeout(() => {
+    // Listen for any key (TV Remote OK, Enter, Arrows, etc.) to dismiss immediately
+    const handleTvRemoteKey = () => {
+      onFinish();
+    };
+
+    window.addEventListener('keydown', handleTvRemoteKey);
+    window.addEventListener('click', handleTvRemoteKey);
+
+    // Fast, lightweight durations for TV boxes and browsers
+    let tExit: NodeJS.Timeout;
+    let tFinish: NodeJS.Timeout;
+
+    if (performanceMode === 'potato') {
+      // Potato mode: instantaneous exit to save every MB of RAM
+      tFinish = setTimeout(() => {
         onFinish();
-      }, 900);
-      return () => clearTimeout(t);
+      }, 150);
+    } else if (performanceMode === 'low') {
+      tFinish = setTimeout(() => {
+        onFinish();
+      }, 700);
+    } else if (performanceMode === 'medium') {
+      setTimeout(() => setStage('glow'), 300);
+      tExit = setTimeout(() => setStage('exit'), 1000);
+      tFinish = setTimeout(() => onFinish(), 1250);
+    } else {
+      setTimeout(() => setStage('glow'), 400);
+      tExit = setTimeout(() => setStage('exit'), 1400);
+      tFinish = setTimeout(() => onFinish(), 1700);
     }
 
-    if (performanceMode === 'medium') {
-      const t1 = setTimeout(() => setStage('glow'), 400);
-      const t2 = setTimeout(() => setStage('exit'), 1300);
-      const t3 = setTimeout(() => onFinish(), 1600);
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
-      };
-    }
-
-    // High performance mode (Full cinematic experience)
-    const t1 = setTimeout(() => setStage('glow'), 600);
-    const t2 = setTimeout(() => setStage('exit'), 2000);
-    const t3 = setTimeout(() => onFinish(), 2400);
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
+      window.removeEventListener('keydown', handleTvRemoteKey);
+      window.removeEventListener('click', handleTvRemoteKey);
+      clearTimeout(tExit);
+      clearTimeout(tFinish);
     };
   }, [performanceMode, onFinish]);
 
-  // LOW PERFORMANCE MODE (Minimalist, battery & 1GB RAM friendly)
-  if (performanceMode === 'low') {
+  // POTATO (500MB) & LOW PERFORMANCE MODE (Minimalist, battery & 1GB RAM friendly)
+  if (performanceMode === 'potato' || performanceMode === 'low') {
     return (
       <div
         onClick={onFinish}
-        className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center cursor-pointer select-none"
+        className="fixed inset-0 z-50 w-full h-full min-w-full min-h-full bg-zinc-950 flex flex-col items-center justify-center cursor-pointer select-none"
+        style={{ width: '100vw', height: '100vh', backgroundColor: '#09090b' }}
       >
-        <div className="flex flex-col items-center animate-fade-in">
-          <div className="w-24 h-24 rounded-2xl overflow-hidden border border-indigo-500/40 bg-zinc-950 p-1 mb-4 shadow-md">
+        <div className="flex flex-col items-center">
+          <div className="w-20 h-20 rounded-2xl overflow-hidden border border-zinc-800 bg-black p-1 mb-3">
             <img
               src="/logo.png"
               alt="Codigo Master IPTV"
               className="w-full h-full object-cover rounded-xl"
+              loading="eager"
             />
           </div>
-          <h1 className="text-2xl font-black text-white tracking-wider">CODIGO MASTER</h1>
-          <span className="text-xs font-bold text-indigo-400 tracking-widest mt-1 uppercase">
-            IPTV PLAYER
+          <h1 className="text-xl font-black text-white tracking-wider">CODIGO MASTER</h1>
+          <span className="text-[11px] font-bold text-amber-400 tracking-widest mt-0.5 uppercase">
+            {performanceMode === 'potato' ? '🥔 MODO PATATA (500MB)' : 'IPTV PLAYER'}
           </span>
-          <p className="text-[10px] text-zinc-500 mt-4">Modo Ahorro de Recursos Activo</p>
+          <p className="text-[10px] text-zinc-500 mt-2">Cargando interfaz ultraligera...</p>
         </div>
       </div>
     );
@@ -80,9 +90,10 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0, scale: 1.05 }}
-          transition={{ duration: performanceMode === 'high' ? 0.4 : 0.25 }}
+          transition={{ duration: performanceMode === 'high' ? 0.3 : 0.2 }}
           onClick={onFinish}
-          className="fixed inset-0 z-50 bg-zinc-950 flex flex-col items-center justify-center cursor-pointer select-none overflow-hidden"
+          className="fixed inset-0 z-50 w-full h-full min-w-full min-h-full bg-zinc-950 flex flex-col items-center justify-center cursor-pointer select-none overflow-hidden"
+          style={{ width: '100vw', height: '100vh', backgroundColor: '#09090b' }}
         >
           {/* Cybernetic Background Glow Effects (Only in High/Medium) */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden flex items-center justify-center">

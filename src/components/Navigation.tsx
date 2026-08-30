@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Tv,
+  Trophy,
   Film,
   Clapperboard,
   Heart,
@@ -15,13 +16,14 @@ import {
 } from 'lucide-react';
 import { DateTimeWidget } from './Common/DateTimeWidget';
 
-export type MainTab = 'live' | 'movies' | 'series' | 'favorites' | 'history' | 'sources';
+export type MainTab = 'live' | 'matches' | 'movies' | 'series' | 'favorites' | 'history' | 'sources';
 
 interface NavigationProps {
   activeTab: MainTab;
   onTabChange: (tab: MainTab) => void;
   counts: {
     live: number;
+    matches?: number;
     movies: number;
     series: number;
     favorites: number;
@@ -44,6 +46,14 @@ export const Navigation: React.FC<NavigationProps> = ({
       count: counts.live,
       accent: 'text-indigo-400',
       activeBg: 'bg-indigo-600/15 border-indigo-500/40 text-white shadow-indigo-500/10',
+    },
+    {
+      id: 'matches' as MainTab,
+      label: 'Partidos',
+      icon: Trophy,
+      count: counts.matches,
+      accent: 'text-amber-400',
+      activeBg: 'bg-amber-600/15 border-amber-500/40 text-white shadow-amber-500/10',
     },
     {
       id: 'movies' as MainTab,
