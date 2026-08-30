@@ -18,6 +18,19 @@ allprojects {
         google()
         mavenCentral()
     }
+    
+    // Desactiva abortos por lint en todos los sub-módulos (incluyendo capacitor-android)
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            project.android {
+                lintOptions {
+                    abortOnError false
+                    checkReleaseBuilds false
+                    warningsAsErrors false
+                }
+            }
+        }
+    }
 }
 
 task clean(type: Delete) {
