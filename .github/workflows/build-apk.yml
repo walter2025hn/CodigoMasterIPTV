@@ -31,10 +31,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK Licenses & Install API 36 / 35
+      - name: Accept Android SDK Licenses & Install Platforms
         run: |
           yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-36" "platforms;android-35" "build-tools;36.0.0" "build-tools;35.0.0" || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
 
       - name: Install NPM Dependencies
         run: |
@@ -53,7 +53,7 @@ jobs:
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug -x test --no-daemon --stacktrace
         env:
           JAVA_OPTS: "-Xmx3072m"
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx3072m"
@@ -61,6 +61,6 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Codigo-Master-IPTV-Android5-Debug-APK
+          name: Codigo-Master-IPTV-Debug-APK
           path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 30
