@@ -3,35 +3,64 @@
 @layer base {
   *, *::before, *::after {
     box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
   }
 
-  html, body, #root {
+  html, body {
     width: 100% !important;
     min-width: 100% !important;
-    max-width: 100% !important;
     height: 100% !important;
     min-height: 100% !important;
-    max-height: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     background-color: #09090b !important;
     background: #09090b !important;
     overflow: hidden !important;
-    position: fixed !important;
-    inset: 0 !important;
+    position: relative !important;
     color: #f4f4f5 !important;
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
     -webkit-font-smoothing: antialiased;
+    outline: none !important;
+    border: none !important;
+  }
+
+  #root {
+    width: 100% !important;
+    min-width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background-color: #09090b !important;
+    background: #09090b !important;
+    overflow: hidden !important;
+    position: relative !important;
+    outline: none !important;
+    border: none !important;
   }
   
   h1, h2, h3, h4, .font-display {
     font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
   }
 
-  /* Focus styling for Smart TV / TV Box D-Pad Remote Navigation */
-  :focus-visible {
+  /* Prevent TV browsers from drawing focus outlines on body/root/containers */
+  body:focus,
+  #root:focus,
+  div:focus,
+  section:focus,
+  main:focus {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Focus styling for Smart TV / TV Box D-Pad Remote Navigation ONLY on interactive controls */
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  [role="button"]:focus-visible,
+  [tabindex="0"]:focus-visible {
     outline: 3px solid #6366f1 !important;
     outline-offset: 2px !important;
     box-shadow: 0 0 20px rgba(99, 102, 241, 0.8) !important;

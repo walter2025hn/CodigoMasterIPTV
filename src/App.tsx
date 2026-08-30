@@ -44,8 +44,16 @@ export default function App() {
   const [isSyncingVod, setIsSyncingVod] = useState<boolean>(false);
   const [isSyncingSeries, setIsSyncingSeries] = useState<boolean>(false);
 
-  // Splash Screen Intro
+  // Splash Screen Intro (Guaranteed auto-dismiss within 1.2s on all devices)
   const [showSplash, setShowSplash] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (!showSplash) return;
+    const failsafe = setTimeout(() => {
+      setShowSplash(false);
+    }, 1200);
+    return () => clearTimeout(failsafe);
+  }, [showSplash]);
 
   // Playback & Navigation State
   const [activeTab, setActiveTab] = useState<MainTab>('live');
@@ -465,7 +473,7 @@ export default function App() {
 
   return (
     <div
-      className={`fixed inset-0 flex flex-col h-full w-full min-h-screen min-w-full bg-zinc-950 text-zinc-100 overflow-hidden font-sans select-none ${
+      className={`absolute inset-0 flex flex-col h-full w-full min-h-full min-w-full bg-zinc-950 text-zinc-100 overflow-hidden font-sans select-none outline-none border-none ${
         settings.tvRemoteMode ? 'tv-mode-active text-scale-tv' : ''
       } ${
         settings.performanceMode === 'potato'
