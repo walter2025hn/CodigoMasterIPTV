@@ -44,8 +44,8 @@ export default function App() {
   const [isSyncingVod, setIsSyncingVod] = useState<boolean>(false);
   const [isSyncingSeries, setIsSyncingSeries] = useState<boolean>(false);
 
-  // Splash Screen Intro (Guaranteed auto-dismiss within 1.2s on all devices)
-  const [showSplash, setShowSplash] = useState<boolean>(true);
+  // Splash Screen Intro (Disabled by default to boot instantly to channels on TV)
+  const [showSplash, setShowSplash] = useState<boolean>(false);
 
   useEffect(() => {
     if (!showSplash) return;
