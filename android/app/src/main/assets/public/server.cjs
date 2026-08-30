@@ -27,74 +27,167 @@ var import_path = __toESM(require("path"), 1);
 var import_vite = require("vite");
 var import_http = __toESM(require("http"), 1);
 var import_https = __toESM(require("https"), 1);
+var httpAgent = new import_http.default.Agent({ keepAlive: true, maxSockets: 60 });
+var httpsAgent = new import_https.default.Agent({ keepAlive: true, maxSockets: 60, rejectUnauthorized: false });
 async function startServer() {
   const app = (0, import_express.default)();
   const PORT = 3e3;
+  app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD");
+    res.setHeader("Access-Control-Allow-Headers", "*");
+    res.setHeader(
+      "Access-Control-Expose-Headers",
+      "Content-Length, Content-Range, Accept-Ranges, Content-Type, Content-Disposition"
+    );
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+    next();
+  });
   app.use(import_express.default.json({ limit: "50mb" }));
   app.use(import_express.default.urlencoded({ extended: true, limit: "50mb" }));
-  app.get("/api/proxy", async (req, res) => {
-    const targetUrl = req.query.url;
+  const handleProxy = (req, res) => {
+    const targetUrl = req.query.url || req.query.stream;
     if (!targetUrl) {
       return res.status(400).json({ error: "Missing url parameter" });
     }
-    try {
-      const parsedUrl = new URL(targetUrl);
-      const isHttps = parsedUrl.protocol === "https:";
-      const client = isHttps ? import_https.default : import_http.default;
-      const headers = {
-        "User-Agent": req.headers["user-agent"] || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "*/*"
-      };
-      if (req.headers["range"]) {
-        headers["Range"] = req.headers["range"];
+    const proxyUrlRequest = (urlToFetch, redirectCount = 0) => {
+      if (redirectCount > 6) {
+        if (!res.headersSent) {
+          res.status(508).json({ error: "Too many redirects from IPTV stream server" });
+        }
+        return;
       }
-      const request = client.request(
-        targetUrl,
-        {
-          method: "GET",
-          headers,
-          rejectUnauthorized: false,
-          // Allows self-signed IPTV stream certs
-          timeout: 2e4
-        },
-        (proxyRes) => {
-          res.setHeader("Access-Control-Allow-Origin", "*");
-          res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-          res.setHeader("Access-Control-Allow-Headers", "*");
-          if (proxyRes.headers["content-type"]) {
-            res.setHeader("Content-Type", proxyRes.headers["content-type"]);
-          }
-          if (proxyRes.headers["content-length"]) {
-            res.setHeader("Content-Length", proxyRes.headers["content-length"]);
-          }
-          if (proxyRes.headers["content-range"]) {
-            res.setHeader("Content-Range", proxyRes.headers["content-range"]);
-          }
-          if (proxyRes.headers["accept-ranges"]) {
-            res.setHeader("Accept-Ranges", proxyRes.headers["accept-ranges"]);
-          }
-          res.status(proxyRes.statusCode || 200);
-          proxyRes.pipe(res);
+      try {
+        const parsedUrl = new URL(urlToFetch);
+        const isHttps = parsedUrl.protocol === "https:";
+        const client = isHttps ? import_https.default : import_http.default;
+        const agent = isHttps ? httpsAgent : httpAgent;
+        const userAgent = req.headers["user-agent"] && !req.headers["user-agent"].includes("Mozilla") ? req.headers["user-agent"] : "IPTVSmartersPro/3.1.5 (Linux; Android 12) ExoPlayerLib/2.18.1 VLC/3.0.18";
+        const headers = {
+          "User-Agent": userAgent,
+          Accept: "*/*",
+          Connection: "keep-alive"
+        };
+        if (req.headers["range"]) {
+          headers["Range"] = req.headers["range"];
         }
-      );
-      request.on("error", (err) => {
-        console.error("Proxy error:", err.message);
+        const request = client.request(
+          urlToFetch,
+          {
+            method: req.method || "GET",
+            headers,
+            agent,
+            rejectUnauthorized: false,
+            // Allows self-signed IPTV stream certs
+            timeout: 3e4
+          },
+          (proxyRes) => {
+            request.setTimeout(0);
+            if (res.socket) {
+              res.socket.setTimeout(0);
+            }
+            if (proxyRes.statusCode && [301, 302, 303, 307, 308].includes(proxyRes.statusCode) && proxyRes.headers.location) {
+              const redirectTarget = new URL(proxyRes.headers.location, urlToFetch).toString();
+              proxyRes.resume();
+              return proxyUrlRequest(redirectTarget, redirectCount + 1);
+            }
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+            res.setHeader("Access-Control-Allow-Headers", "*");
+            res.setHeader(
+              "Access-Control-Expose-Headers",
+              "Content-Length, Content-Range, Accept-Ranges, Content-Type, Content-Disposition"
+            );
+            const contentType = proxyRes.headers["content-type"] || "";
+            const isM3u8 = urlToFetch.includes(".m3u8") || contentType.includes("application/vnd.apple.mpegurl") || contentType.includes("application/x-mpegurl") || contentType.includes("audio/x-mpegurl") || contentType.includes("vnd.apple.mpegurl");
+            if (proxyRes.headers["content-range"]) {
+              res.setHeader("Content-Range", proxyRes.headers["content-range"]);
+            }
+            if (proxyRes.headers["accept-ranges"]) {
+              res.setHeader("Accept-Ranges", proxyRes.headers["accept-ranges"]);
+            } else {
+              res.setHeader("Accept-Ranges", "bytes");
+            }
+            if (isM3u8) {
+              res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+              res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+              const chunks = [];
+              proxyRes.on("data", (chunk) => chunks.push(chunk));
+              proxyRes.on("end", () => {
+                const bodyStr = Buffer.concat(chunks).toString("utf-8");
+                if (bodyStr.trim().startsWith("#EXTM3U")) {
+                  const parentUrl = urlToFetch.substring(0, urlToFetch.lastIndexOf("/") + 1);
+                  const lines = bodyStr.split("\n");
+                  const rewrittenLines = lines.map((line) => {
+                    const trimmed = line.trim();
+                    if (!trimmed || trimmed.startsWith("#")) {
+                      if (trimmed.includes('URI="')) {
+                        return trimmed.replace(/URI="([^"]+)"/g, (match, uri) => {
+                          const absUri = uri.startsWith("http://") || uri.startsWith("https://") ? uri : new URL(uri, parentUrl).toString();
+                          return `URI="/api/proxy?url=${encodeURIComponent(absUri)}"`;
+                        });
+                      }
+                      return line;
+                    }
+                    const absoluteSegmentUrl = trimmed.startsWith("http://") || trimmed.startsWith("https://") ? trimmed : new URL(trimmed, parentUrl).toString();
+                    return `/api/proxy?url=${encodeURIComponent(absoluteSegmentUrl)}`;
+                  });
+                  const finalPlaylist = rewrittenLines.join("\n");
+                  res.setHeader("Content-Length", Buffer.byteLength(finalPlaylist));
+                  res.status(proxyRes.statusCode || 200).send(finalPlaylist);
+                } else {
+                  res.setHeader("Content-Length", Buffer.concat(chunks).length);
+                  res.status(proxyRes.statusCode || 200).end(Buffer.concat(chunks));
+                }
+              });
+              return;
+            }
+            if (contentType && contentType !== "application/octet-stream") {
+              res.setHeader("Content-Type", contentType);
+            } else if (urlToFetch.includes(".ts")) {
+              res.setHeader("Content-Type", "video/mp2t");
+            } else if (urlToFetch.includes(".mp4")) {
+              res.setHeader("Content-Type", "video/mp4");
+            } else if (urlToFetch.includes(".mkv")) {
+              res.setHeader("Content-Type", "video/x-matroska");
+            } else {
+              res.setHeader("Content-Type", contentType || "video/mp4");
+            }
+            if (proxyRes.headers["content-length"]) {
+              res.setHeader("Content-Length", proxyRes.headers["content-length"]);
+            }
+            res.status(proxyRes.statusCode || 200);
+            proxyRes.pipe(res);
+          }
+        );
+        request.on("error", (err) => {
+          console.error("Proxy error for URL:", urlToFetch, err.message);
+          if (!res.headersSent) {
+            res.status(502).json({ error: `Proxy request failed: ${err.message}` });
+          }
+        });
+        request.on("timeout", () => {
+          request.destroy();
+          if (!res.headersSent) {
+            res.status(504).json({ error: "Proxy request timed out" });
+          }
+        });
+        req.on("close", () => {
+          request.destroy();
+        });
+        request.end();
+      } catch (err) {
         if (!res.headersSent) {
-          res.status(502).json({ error: `Proxy request failed: ${err.message}` });
+          res.status(400).json({ error: "Invalid URL provided: " + err.message });
         }
-      });
-      request.on("timeout", () => {
-        request.destroy();
-        if (!res.headersSent) {
-          res.status(504).json({ error: "Proxy request timed out" });
-        }
-      });
-      request.end();
-    } catch (err) {
-      console.error("Invalid target URL:", err.message);
-      res.status(400).json({ error: "Invalid URL provided" });
-    }
-  });
+      }
+    };
+    proxyUrlRequest(targetUrl);
+  };
+  app.all("/api/proxy", handleProxy);
+  app.all("/api/stream", handleProxy);
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", app: "Codigo Master IPTV", version: "1.0.0" });
   });

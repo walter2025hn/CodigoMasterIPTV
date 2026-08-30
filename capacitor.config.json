@@ -5,17 +5,23 @@
   "bundledWebRuntime": false,
   "server": {
     "androidScheme": "http",
-    "cleartext": true
+    "cleartext": true,
+    "allowNavigation": ["*"]
   },
   "plugins": {
     "SplashScreen": {
-      "launchShowDuration": 2000,
+      "launchShowDuration": 1000,
+      "launchAutoHide": true,
+      "launchFadeOutDuration": 200,
       "backgroundColor": "#09090b",
-      "showSpinner": true,
-      "spinnerColor": "#6366f1"
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
     }
   },
   "android": {
-    "allowMixedContent": true
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
   }
 }
