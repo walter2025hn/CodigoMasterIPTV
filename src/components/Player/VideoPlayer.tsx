@@ -10,6 +10,8 @@ import {
   PictureInPicture,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   RotateCcw,
   Settings,
   Heart,
@@ -25,9 +27,30 @@ import {
   Rewind,
   Gauge,
   ShieldCheck,
+  Sun,
+  Smartphone,
+  Sliders,
+  Sparkles,
+  Check,
 } from 'lucide-react';
-import { ChannelItem, UserSettings } from '../../types/iptv';
+import { ChannelItem, UserSettings, VideoQualityPreset } from '../../types/iptv';
 import { NetworkService } from '../../services/networkService';
+import { DateTimeWidget } from '../Common/DateTimeWidget';
+
+export const QUALITY_PRESETS: {
+  id: VideoQualityPreset;
+  label: string;
+  sublabel: string;
+  badge: string;
+  height: number;
+}[] = [
+  { id: 'auto', label: 'Automática', sublabel: 'Adaptativa según red y buffer', badge: 'AUTO', height: 0 },
+  { id: '480p', label: '480p SD', sublabel: 'Ahorro de datos y menor consumo', badge: '480p', height: 480 },
+  { id: '720p', label: '720p HD', sublabel: 'Alta Definición equilibrada', badge: '720p', height: 720 },
+  { id: '1080p', label: '1080p FHD', sublabel: 'Full HD estándar de gran nitidez', badge: '1080p', height: 1080 },
+  { id: '2k', label: '2K QHD', sublabel: '1440p Ultra Nitidez Cinema', badge: '2K', height: 1440 },
+  { id: '4k', label: '4K UHD', sublabel: '2160p Máxima Definición 4K', badge: '4K', height: 2160 },
+];
 
 interface VideoPlayerProps {
   channel: ChannelItem | null;
@@ -88,6 +111,44 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (typeof window !== 'undefined' && window.location.protocol === 'https:') return true;
     return settings.useProxy ?? false;
   });
+
+  // Mobile & TV Optimizations: Gestures, Brightness & Remote OSD
+  const [brightness, setBrightness] = useState<number>(1);
+  const [remoteNumInput, setRemoteNumInput] = useState<string>('');
+  const [selectedQualityPreset, setSelectedQualityPreset] = useState<VideoQualityPreset>(
+    settings.preferredQuality || 'auto'
+  );
+  const [showQualityMenu, setShowQualityMenu] = useState<boolean>(false);
+  const [gestureFeedback, setGestureFeedback] = useState<{
+    type: 'brightness' | 'volume' | 'seek_fwd' | 'seek_rwd' | 'play' | 'pause' | 'quality';
+    label: string;
+    percent?: number;
+  } | null>(null);
+
+  const touchStateRef = useRef<{
+    startX: number;
+    startY: number;
+    startVol: number;
+    startBright: number;
+    startTime: number;
+    lastTapTime: number;
+    lastTapX: number;
+    isSwiping: boolean;
+    swipeType: 'vertical_left' | 'vertical_right' | 'horizontal' | null;
+  }>({
+    startX: 0,
+    startY: 0,
+    startVol: 1,
+    startBright: 1,
+    startTime: 0,
+    lastTapTime: 0,
+    lastTapX: 0,
+    isSwiping: false,
+    swipeType: null,
+  });
+
+  const gestureTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const remoteNumTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Alternative extension for VOD retries (.mp4, .mkv, .ts, .m3u8)
   const [customExtension, setCustomExtension] = useState<string | null>(null);
@@ -152,31 +213,41 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         (isLive && !targetUrl.toLowerCase().endsWith('.mp4'));
 
       if (wantsHls && Hls.isSupported() && forceEngine !== 'native') {
+        const perf = settings.performanceMode || 'medium';
+        const isLowPerf = perf === 'low';
+        const isHighPerf = perf === 'high';
+
+        const customBuffer = settings.bufferLength || (isLowPerf ? 15 : isHighPerf ? 45 : 30);
+
         const hlsConfig: any = {
-          enableWorker: true,
+          enableWorker: !isLowPerf, // Disable worker thread on low-end single/dual-core TV boxes
           lowLatencyMode: false,
-          backBufferLength: isLive ? 90 : 30,
-          maxBufferLength: isLive ? Math.max(settings.bufferLength || 35, 45) : 40,
-          maxMaxBufferLength: isLive ? 120 : 80,
-          maxBufferSize: 64 * 1024 * 1024,
-          highBufferWatchdogPeriod: 2,
-          nudgeOffset: 0.5,
-          nudgeMaxRetry: 10,
-          maxBufferHole: 0.8,
-          fragLoadingTimeOut: 20000,
+          capLevelToPlayerSize: isLowPerf, // Save decoding GPU cycles on weak screens
+          backBufferLength: isLowPerf ? 10 : isHighPerf ? 60 : isLive ? 30 : 20,
+          maxBufferLength: isLowPerf ? Math.min(15, customBuffer) : customBuffer,
+          maxMaxBufferLength: isLowPerf ? 20 : isHighPerf ? 90 : 60,
+          maxBufferSize: isLowPerf ? 15 * 1024 * 1024 : isHighPerf ? 96 * 1024 * 1024 : 45 * 1024 * 1024,
+          highBufferWatchdogPeriod: isLowPerf ? 5 : 3,
+          nudgeOffset: 0.1,
+          nudgeMaxRetry: isLowPerf ? 3 : 5,
+          maxBufferHole: 0.5,
+          fragLoadingTimeOut: isLowPerf ? 18000 : 25000,
           manifestLoadingTimeOut: 20000,
           levelLoadingTimeOut: 20000,
-          fragLoadingMaxRetry: 6,
-          manifestLoadingMaxRetry: 6,
-          levelLoadingMaxRetry: 6,
+          fragLoadingMaxRetry: isLowPerf ? 6 : 10,
+          manifestLoadingMaxRetry: 10,
+          levelLoadingMaxRetry: 10,
+          fragLoadingRetryDelay: 1000,
+          manifestLoadingRetryDelay: 1000,
           xhrSetup: (xhr: XMLHttpRequest) => {
             xhr.withCredentials = false;
           },
         };
 
         if (isLive) {
-          hlsConfig.liveSyncDuration = 20; // Precarga 20 segundos para Live TV anti-cortes
-          hlsConfig.liveMaxLatencyDuration = 40;
+          // Keep safely 3 segments behind live edge to prevent buffer underruns/cuts
+          hlsConfig.liveSyncDurationCount = 3;
+          hlsConfig.liveMaxLatencyDurationCount = 8;
           hlsConfig.liveDurationInfinity = true;
         }
 
@@ -317,7 +388,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [channel?.id, channel?.url, isProxyUsed, loadStream, settings.autoPlay]);
 
   // =========================================================================
-  // 3-SECOND WATCHDOG: Checks every 3s if playback is stalled & auto-recovers
+  // SMART WATCHDOG: Non-intrusive buffer monitoring (Every 4s)
   // =========================================================================
   useEffect(() => {
     if (!channel || !channel.url) return;
@@ -331,8 +402,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         return;
       }
 
-      // Initial grace period: 6s after stream load to allow initial buffer
-      if (Date.now() - streamLoadTimestampRef.current < 6000) {
+      // Initial grace period: 8s after stream load to allow initial buffer
+      if (Date.now() - streamLoadTimestampRef.current < 8000) {
         return;
       }
 
@@ -346,7 +417,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       const lastPos = lastPlaybackPosRef.current;
       const diff = Math.abs(currentPos - lastPos);
 
-      // Normal playback: video position advanced >= 0.1s in the last 3s
+      // Normal playback: video position advanced >= 0.1s in the last 4s
       if (diff >= 0.1) {
         lastPlaybackPosRef.current = currentPos;
         if (stallCountRef.current > 0) {
@@ -356,13 +427,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         return;
       }
 
-      // Playback is frozen/stalled!
+      // Playback is frozen/stalled
       stallCountRef.current += 1;
 
-      // Only attempt active recovery after 2 consecutive stalled checks (6 seconds)
-      if (stallCountRef.current >= 2 && !isHandlingRecoveryRef.current) {
+      // Only attempt active recovery after 3 consecutive stalled checks (12 seconds of true freeze)
+      if (stallCountRef.current >= 3 && !isHandlingRecoveryRef.current) {
         const now = Date.now();
-        if (now - lastRecoveryTimeRef.current < 6000) {
+        if (now - lastRecoveryTimeRef.current < 10000) {
           return; // cooldown between recoveries
         }
 
@@ -371,56 +442,37 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         setIsAutoReconnecting(true);
         setReconnectCount((prev) => prev + 1);
 
-        const isLive = channel.streamType === 'live' || !channel.streamType;
         const currentProgress = video.currentTime;
 
-        // Stage 1 Recovery: Soft buffer nudge & HLS error recovery
         if (hlsRef.current) {
-          if (stallCountRef.current === 2) {
-            try {
-              hlsRef.current.recoverMediaError();
-              video.currentTime += 0.3; // soft nudge over buffer gap
-              video.play().catch(() => {});
-            } catch {
-              // fallback to loadSource
-            }
-          } else {
-            // Stage 2 Recovery: Reload fresh live playlist with cache-buster
-            const baseUrl = getStreamUrl(channel.url, isProxyUsed, customExtension);
-            const freshUrl = isLive
-              ? `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`
-              : baseUrl;
-
-            hlsRef.current.loadSource(freshUrl);
+          try {
+            hlsRef.current.recoverMediaError();
             hlsRef.current.startLoad();
             video.play().catch(() => {});
+          } catch {
+            // fallback
           }
         } else {
-          // Direct VOD (Movies / Series)
-          if (stallCountRef.current === 2) {
-            video.play().catch(() => {});
+          // Direct VOD fallback: if native failed or hung, switch to HLS or reload
+          if (Hls.isSupported() && !hlsRef.current) {
+            console.log('[Watchdog] VOD stall: Attempting Hls.js fallback engine...');
+            loadStream(channel.url, isProxyUsed, currentProgress, customExtension, 'hls');
           } else {
-            // If direct native playback stalled on VOD, fallback to Hls.js demuxer or reload
-            if (Hls.isSupported() && !hlsRef.current) {
-              console.log('[Watchdog] VOD stall: Attempting Hls.js fallback engine...');
-              loadStream(channel.url, isProxyUsed, currentProgress, customExtension);
-            } else {
-              const baseUrl = getStreamUrl(channel.url, isProxyUsed, customExtension);
-              video.src = baseUrl;
-              video.load();
-              if (currentProgress > 0) {
-                video.currentTime = currentProgress;
-              }
-              video.play().catch(() => {});
+            const baseUrl = getStreamUrl(channel.url, isProxyUsed, customExtension);
+            video.src = baseUrl;
+            video.load();
+            if (currentProgress > 0) {
+              video.currentTime = currentProgress;
             }
+            video.play().catch(() => {});
           }
         }
 
         setTimeout(() => {
           isHandlingRecoveryRef.current = false;
-        }, 2500);
+        }, 3000);
       }
-    }, 3000);
+    }, 4000);
 
     return () => clearInterval(watchdogInterval);
   }, [channel?.id, channel?.url, channel?.streamType, customExtension, getStreamUrl, isProxyUsed, loadStream]);
@@ -659,6 +711,84 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setShowSettingsMenu(false);
   };
 
+  const handleSelectQualityPreset = (preset: VideoQualityPreset) => {
+    setSelectedQualityPreset(preset);
+    setShowQualityMenu(false);
+
+    const presetObj = QUALITY_PRESETS.find((p) => p.id === preset) || QUALITY_PRESETS[0];
+
+    if (preset === 'auto') {
+      if (hlsRef.current) {
+        hlsRef.current.currentLevel = -1;
+        setCurrentLevel(-1);
+      }
+      triggerGestureOSD('quality', 'Calidad: Automática (Adaptativa)');
+      return;
+    }
+
+    // If HLS levels exist, match best level by target height
+    if (hlsRef.current && hlsRef.current.levels && hlsRef.current.levels.length > 0) {
+      const targetHeight = presetObj.height;
+      let bestIdx = 0;
+      let minDiff = Infinity;
+
+      hlsRef.current.levels.forEach((lvl, idx) => {
+        const h = lvl.height || (idx === 0 ? 480 : idx === 1 ? 720 : 1080);
+        const diff = Math.abs(h - targetHeight);
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestIdx = idx;
+        }
+      });
+
+      hlsRef.current.currentLevel = bestIdx;
+      setCurrentLevel(bestIdx);
+    }
+
+    triggerGestureOSD(
+      'quality',
+      `Calidad: ${presetObj.label}`,
+      presetObj.height ? Math.round((presetObj.height / 2160) * 100) : undefined
+    );
+  };
+
+  const handleQualityStepUp = () => {
+    const order: VideoQualityPreset[] = ['480p', '720p', '1080p', '2k', '4k'];
+    const currentIndex = order.indexOf(selectedQualityPreset);
+    if (currentIndex === -1) {
+      handleSelectQualityPreset('1080p');
+    } else if (currentIndex < order.length - 1) {
+      handleSelectQualityPreset(order[currentIndex + 1]);
+    } else {
+      triggerGestureOSD('quality', 'Calidad Máxima: 4K UHD', 100);
+    }
+  };
+
+  const handleQualityStepDown = () => {
+    const order: VideoQualityPreset[] = ['480p', '720p', '1080p', '2k', '4k'];
+    const currentIndex = order.indexOf(selectedQualityPreset);
+    if (currentIndex === -1) {
+      handleSelectQualityPreset('720p');
+    } else if (currentIndex > 0) {
+      handleSelectQualityPreset(order[currentIndex - 1]);
+    } else {
+      triggerGestureOSD('quality', 'Calidad Mínima: 480p SD', 22);
+    }
+  };
+
+  const getVideoFilterStyle = () => {
+    const filters: string[] = [];
+    if (brightness !== 1) filters.push(`brightness(${brightness})`);
+    if (selectedQualityPreset === '4k') {
+      filters.push('contrast(1.04) saturate(1.06)');
+    } else if (selectedQualityPreset === '2k') {
+      filters.push('contrast(1.02) saturate(1.03)');
+    } else if (selectedQualityPreset === '1080p') {
+      filters.push('contrast(1.01)');
+    }
+    return filters.length > 0 ? filters.join(' ') : undefined;
+  };
+
   const handleAudioTrackChange = (trackId: number) => {
     if (hlsRef.current) {
       hlsRef.current.audioTrack = trackId;
@@ -667,54 +797,277 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setShowSettingsMenu(false);
   };
 
-  // Keyboard navigation & Android TV remote
+  // Helper to show on-screen gesture HUD
+  const triggerGestureOSD = (
+    type: 'brightness' | 'volume' | 'seek_fwd' | 'seek_rwd' | 'play' | 'pause' | 'quality',
+    label: string,
+    percent?: number
+  ) => {
+    if (gestureTimerRef.current) clearTimeout(gestureTimerRef.current);
+    setGestureFeedback({ type, label, percent });
+    gestureTimerRef.current = setTimeout(() => {
+      setGestureFeedback(null);
+    }, 1200);
+  };
+
+  // Touch Gestures: Brightness, Volume, Seek and Double-Tap for Mobile
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    const container = containerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+
+    touchStateRef.current = {
+      ...touchStateRef.current,
+      startX: x,
+      startY: y,
+      startVol: volume,
+      startBright: brightness,
+      startTime: Date.now(),
+      isSwiping: false,
+      swipeType: null,
+    };
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    const container = containerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const currentX = touch.clientX - rect.left;
+    const currentY = touch.clientY - rect.top;
+
+    const deltaX = currentX - touchStateRef.current.startX;
+    const deltaY = currentY - touchStateRef.current.startY;
+
+    // Detect if movement is meaningful (drag threshold)
+    if (!touchStateRef.current.isSwiping && (Math.abs(deltaX) > 15 || Math.abs(deltaY) > 15)) {
+      touchStateRef.current.isSwiping = true;
+      if (Math.abs(deltaY) > Math.abs(deltaX)) {
+        // Vertical swipe: Left side = Brightness, Right side = Volume
+        const isLeftHalf = touchStateRef.current.startX < rect.width / 2;
+        touchStateRef.current.swipeType = isLeftHalf ? 'vertical_left' : 'vertical_right';
+      } else {
+        // Horizontal swipe: Seek
+        touchStateRef.current.swipeType = 'horizontal';
+      }
+    }
+
+    if (touchStateRef.current.isSwiping) {
+      if (touchStateRef.current.swipeType === 'vertical_left') {
+        // Brightness control (swipe up = brighter, swipe down = dimmer)
+        const change = -deltaY / (rect.height * 0.7);
+        const newBright = Math.max(0.3, Math.min(1.5, touchStateRef.current.startBright + change));
+        setBrightness(newBright);
+        const percent = Math.round(((newBright - 0.3) / 1.2) * 100);
+        triggerGestureOSD('brightness', `Brillo: ${percent}%`, percent);
+      } else if (touchStateRef.current.swipeType === 'vertical_right') {
+        // Volume control
+        const change = -deltaY / (rect.height * 0.7);
+        const newVol = Math.max(0, Math.min(1, touchStateRef.current.startVol + change));
+        handleVolumeChange(newVol);
+        const percent = Math.round(newVol * 100);
+        triggerGestureOSD('volume', `Volumen: ${percent}%`, percent);
+      } else if (touchStateRef.current.swipeType === 'horizontal' && channel?.streamType !== 'live') {
+        // Seek gesture for VOD
+        const seekOffset = Math.round((deltaX / rect.width) * 90); // max 90s swipe
+        if (videoRef.current) {
+          const targetTime = Math.max(0, Math.min(duration, currentTime + seekOffset));
+          triggerGestureOSD(
+            seekOffset >= 0 ? 'seek_fwd' : 'seek_rwd',
+            `${seekOffset >= 0 ? '+' : ''}${seekOffset}s (${formatTime(targetTime)})`
+          );
+        }
+      }
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const now = Date.now();
+    const timeDiff = now - touchStateRef.current.startTime;
+
+    if (!touchStateRef.current.isSwiping && timeDiff < 300) {
+      // Tap detected - check for double tap
+      const rect = containerRef.current?.getBoundingClientRect();
+      const tapX = touchStateRef.current.startX;
+      const tapTimeDiff = now - touchStateRef.current.lastTapTime;
+      const tapDistX = Math.abs(tapX - touchStateRef.current.lastTapX);
+
+      if (rect && tapTimeDiff < 350 && tapDistX < 80) {
+        // Double tap confirmed!
+        if (tapX < rect.width * 0.35) {
+          // Double tap LEFT: rewind 10s
+          if (channel?.streamType !== 'live') {
+            handleSkip(-10);
+            triggerGestureOSD('seek_rwd', '-10 segundos');
+          } else if (onPrevChannel) {
+            onPrevChannel();
+            triggerGestureOSD('seek_rwd', 'Canal Anterior');
+          }
+        } else if (tapX > rect.width * 0.65) {
+          // Double tap RIGHT: forward 10s
+          if (channel?.streamType !== 'live') {
+            handleSkip(10);
+            triggerGestureOSD('seek_fwd', '+10 segundos');
+          } else if (onNextChannel) {
+            onNextChannel();
+            triggerGestureOSD('seek_fwd', 'Siguiente Canal');
+          }
+        } else {
+          // Double tap CENTER: toggle fullscreen or play
+          togglePlay();
+          triggerGestureOSD(isPlaying ? 'pause' : 'play', isPlaying ? 'Pausa' : 'Reproducir');
+        }
+        touchStateRef.current.lastTapTime = 0;
+      } else {
+        // Single tap: toggle controls
+        touchStateRef.current.lastTapTime = now;
+        touchStateRef.current.lastTapX = tapX;
+        setShowControls((prev) => !prev);
+      }
+    } else if (touchStateRef.current.isSwiping && touchStateRef.current.swipeType === 'horizontal') {
+      if (channel?.streamType !== 'live' && videoRef.current) {
+        const deltaX = (e.changedTouches[0]?.clientX || 0) - (containerRef.current?.getBoundingClientRect().left || 0) - touchStateRef.current.startX;
+        const rectWidth = containerRef.current?.getBoundingClientRect().width || 1;
+        const seekOffset = Math.round((deltaX / rectWidth) * 90);
+        handleSkip(seekOffset);
+      }
+    }
+
+    touchStateRef.current.isSwiping = false;
+  };
+
+  // Keyboard navigation, TV remote D-Pad, Numeric keys and Color buttons
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (['input', 'textarea', 'select'].includes((e.target as HTMLElement)?.tagName?.toLowerCase())) {
         return;
       }
 
+      // TV Numeric Keypad Direct Channel Selection (0-9)
+      if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
+        setRemoteNumInput((prev) => {
+          const next = prev + e.key;
+          if (remoteNumTimerRef.current) clearTimeout(remoteNumTimerRef.current);
+          remoteNumTimerRef.current = setTimeout(() => {
+            setRemoteNumInput('');
+          }, 2000);
+          return next;
+        });
+        return;
+      }
+
       switch (e.key) {
         case ' ':
         case 'k':
+        case 'MediaPlayPause':
           e.preventDefault();
           togglePlay();
           break;
+        case 'MediaPlay':
+          e.preventDefault();
+          if (videoRef.current && videoRef.current.paused) videoRef.current.play();
+          break;
+        case 'MediaPause':
+          e.preventDefault();
+          if (videoRef.current && !videoRef.current.paused) videoRef.current.pause();
+          break;
+        case 'MediaFastForward':
+          e.preventDefault();
+          handleSkip(10);
+          break;
+        case 'MediaRewind':
+          e.preventDefault();
+          handleSkip(-10);
+          break;
         case 'f':
+        case 'F':
           e.preventDefault();
           toggleFullscreen();
           break;
         case 'm':
+        case 'M':
           e.preventDefault();
           toggleMute();
           break;
+        case '[':
+        case '-':
+          e.preventDefault();
+          handleQualityStepDown();
+          break;
+        case ']':
+        case '+':
+        case '=':
+          e.preventDefault();
+          handleQualityStepUp();
+          break;
+        case 'q':
+        case 'Q':
+        case 'ColorF3Blue':
+        case 'Blue':
+          e.preventDefault();
+          setShowQualityMenu((prev) => !prev);
+          break;
+        case 'ColorF0Red':
+        case 'Red':
+        case 'r':
+          if (channel) {
+            e.preventDefault();
+            onToggleFavorite(channel);
+            triggerGestureOSD('play', isFavorite ? 'Quitado de Favoritos' : 'Añadido a Favoritos');
+          }
+          break;
+        case 'ColorF2Yellow':
+        case 'Yellow':
+        case 'y':
+          e.preventDefault();
+          setAspectRatio((prev) => {
+            const list: ('auto' | '16:9' | '4:3' | 'fill' | 'contain')[] = ['auto', '16:9', '4:3', 'fill', 'contain'];
+            const next = list[(list.indexOf(prev) + 1) % list.length];
+            triggerGestureOSD('play', `Aspecto: ${next.toUpperCase()}`);
+            return next;
+          });
+          break;
         case 'ArrowUp':
           e.preventDefault();
-          handleVolumeChange(Math.min(1, volume + 0.1));
+          handleVolumeChange(Math.min(1, volume + 0.05));
+          triggerGestureOSD('volume', `Volumen: ${Math.round(Math.min(1, volume + 0.05) * 100)}%`, Math.round(Math.min(1, volume + 0.05) * 100));
           break;
         case 'ArrowDown':
           e.preventDefault();
-          handleVolumeChange(Math.max(0, volume - 0.1));
+          handleVolumeChange(Math.max(0, volume - 0.05));
+          triggerGestureOSD('volume', `Volumen: ${Math.round(Math.max(0, volume - 0.05) * 100)}%`, Math.round(Math.max(0, volume - 0.05) * 100));
           break;
         case 'ArrowRight':
           if (channel?.streamType !== 'live' && videoRef.current) {
             e.preventDefault();
             handleSkip(10);
+            triggerGestureOSD('seek_fwd', '+10s');
           }
           break;
         case 'ArrowLeft':
           if (channel?.streamType !== 'live' && videoRef.current) {
             e.preventDefault();
             handleSkip(-10);
+            triggerGestureOSD('seek_rwd', '-10s');
           }
           break;
         case 'PageUp':
+        case 'ChannelUp':
           if (onPrevChannel) {
             e.preventDefault();
             onPrevChannel();
           }
           break;
         case 'PageDown':
+        case 'ChannelDown':
           if (onNextChannel) {
             e.preventDefault();
             onNextChannel();
@@ -725,7 +1078,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [volume, isMuted, channel]);
+  }, [volume, isMuted, channel, isFavorite, aspectRatio]);
 
   // Format time for VOD
   const formatTime = (secs: number) => {
@@ -777,7 +1130,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       ref={containerRef}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => isPlaying && setShowControls(false)}
-      className="relative w-full h-full bg-black rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center group select-none min-h-[300px] max-h-[85vh]"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      className="relative w-full h-full bg-black rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center group select-none min-h-[300px] max-h-[85vh] touch-none"
     >
       {/* Video Element */}
       <video
@@ -786,8 +1142,46 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         preload="auto"
         onClick={togglePlay}
         onDoubleClick={toggleFullscreen}
-        className={`${getAspectRatioClass()} max-h-full cursor-pointer`}
+        style={{
+          filter: getVideoFilterStyle(),
+        }}
+        className={`${getAspectRatioClass()} max-h-full cursor-pointer transition-[filter] duration-75`}
       />
+
+      {/* On-Screen Touch / Remote Gesture Feedback HUD */}
+      {gestureFeedback && (
+        <div className="absolute z-40 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md text-white px-5 py-4 rounded-2xl border border-white/20 shadow-2xl animate-in zoom-in-90 fade-in duration-150 pointer-events-none min-w-[140px]">
+          {gestureFeedback.type === 'brightness' && <Sun className="w-8 h-8 text-amber-400 mb-2 animate-pulse" />}
+          {gestureFeedback.type === 'volume' && <Volume2 className="w-8 h-8 text-indigo-400 mb-2 animate-pulse" />}
+          {gestureFeedback.type === 'seek_fwd' && <FastForward className="w-8 h-8 text-emerald-400 mb-2" />}
+          {gestureFeedback.type === 'seek_rwd' && <Rewind className="w-8 h-8 text-emerald-400 mb-2" />}
+          {gestureFeedback.type === 'play' && <Play className="w-8 h-8 text-indigo-400 mb-2 fill-indigo-400" />}
+          {gestureFeedback.type === 'pause' && <Pause className="w-8 h-8 text-amber-400 mb-2" />}
+          {gestureFeedback.type === 'quality' && <Sparkles className="w-8 h-8 text-amber-400 mb-2 animate-bounce" />}
+
+          <span className="text-xs font-bold text-center tracking-wide">{gestureFeedback.label}</span>
+
+          {typeof gestureFeedback.percent === 'number' && (
+            <div className="w-24 h-1.5 bg-zinc-700 rounded-full mt-2 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-indigo-500 to-emerald-400 rounded-full transition-all duration-75"
+                style={{ width: `${Math.max(0, Math.min(100, gestureFeedback.percent))}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TV Remote Direct Channel Number OSD */}
+      {remoteNumInput && (
+        <div className="absolute top-8 right-8 z-40 flex items-center gap-3 bg-indigo-950/90 text-white px-5 py-3 rounded-2xl border-2 border-indigo-500 shadow-2xl backdrop-blur-md animate-in slide-in-from-top-4 fade-in duration-200">
+          <Tv className="w-6 h-6 text-indigo-400 animate-pulse" />
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase font-bold text-indigo-300 tracking-wider">Canal TV</span>
+            <span className="text-2xl font-black tracking-widest text-white">{remoteNumInput}</span>
+          </div>
+        </div>
+      )}
 
       {/* Top Reconnect / Buffer Status Indicator */}
       {isAutoReconnecting && (
@@ -950,8 +1344,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
         </div>
 
-        {/* Top Right Quick Actions */}
-        <div className="flex items-center gap-1.5">
+        {/* Top Right Quick Actions & Realtime Clock/Date */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Live Clock & Date in Player Overlay */}
+          <DateTimeWidget variant="player" className="hidden sm:flex" />
+
           {/* Buffer Status / 20s Live Shield Badge */}
           {isLive ? (
             <div
@@ -1172,6 +1569,121 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 <Maximize2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-indigo-400" />
                 <span className="uppercase text-[9px] sm:text-[10px]">{aspectRatio}</span>
               </button>
+            </div>
+
+            {/* Dedicated Quality Selector (480p to 4K) */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowQualityMenu(!showQualityMenu);
+                  setShowSettingsMenu(false);
+                }}
+                className={`px-2 py-1 sm:py-1.5 rounded-xl text-[10px] sm:text-[11px] font-bold tracking-wider transition-all flex items-center gap-1.5 cursor-pointer border ${
+                  showQualityMenu
+                    ? 'bg-amber-500 text-black border-amber-400 shadow-lg shadow-amber-500/30'
+                    : selectedQualityPreset === '4k'
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                    : selectedQualityPreset === '2k'
+                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30'
+                    : selectedQualityPreset === '1080p'
+                    ? 'bg-blue-500/20 text-blue-300 border-blue-500/40 hover:bg-blue-500/30'
+                    : selectedQualityPreset === '720p'
+                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
+                    : selectedQualityPreset === '480p'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                    : 'bg-white/10 hover:bg-white/20 text-white border-white/10'
+                }`}
+                title="Ajustar Calidad de Video (480p a 4K) - Tecla Q"
+              >
+                <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                <span className="uppercase text-[9px] sm:text-[10px] font-black">
+                  {QUALITY_PRESETS.find((p) => p.id === selectedQualityPreset)?.badge || 'CALIDAD'}
+                </span>
+              </button>
+
+              {showQualityMenu && (
+                <div className="absolute bottom-12 right-0 sm:right-auto sm:left-1/2 sm:-translate-x-1/2 w-64 bg-zinc-950/95 backdrop-blur-xl rounded-2xl border border-zinc-700/80 p-3 shadow-2xl z-40 text-xs animate-in zoom-in-95 fade-in duration-150">
+                  {/* Header */}
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-800">
+                    <div className="flex items-center gap-1.5 text-zinc-200">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="font-bold text-[11px] uppercase tracking-wider text-white">Calidad (480p - 4K)</span>
+                    </div>
+                    <button
+                      onClick={() => setShowQualityMenu(false)}
+                      className="text-zinc-400 hover:text-zinc-200 text-xs px-1 cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Quick Step Up / Down Buttons */}
+                  <div className="grid grid-cols-2 gap-1.5 mb-2.5">
+                    <button
+                      onClick={handleQualityStepUp}
+                      className="px-2 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/60 text-zinc-200 flex items-center justify-center gap-1 text-[10px] font-bold cursor-pointer active:scale-95 transition-transform"
+                      title="Subir Calidad (Tecla + o ])"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Subir (+)</span>
+                    </button>
+                    <button
+                      onClick={handleQualityStepDown}
+                      className="px-2 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/60 text-zinc-200 flex items-center justify-center gap-1 text-[10px] font-bold cursor-pointer active:scale-95 transition-transform"
+                      title="Bajar Calidad (Tecla - o [)"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Bajar (-)</span>
+                    </button>
+                  </div>
+
+                  {/* Preset List */}
+                  <div className="space-y-1 max-h-56 overflow-y-auto pr-0.5">
+                    {QUALITY_PRESETS.map((preset) => {
+                      const isSelected = selectedQualityPreset === preset.id;
+                      return (
+                        <button
+                          key={preset.id}
+                          onClick={() => handleSelectQualityPreset(preset.id)}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl transition-all flex items-center justify-between cursor-pointer ${
+                            isSelected
+                              ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold shadow-md shadow-indigo-600/30'
+                              : 'text-zinc-300 hover:bg-zinc-900 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px]">{preset.label}</span>
+                              {preset.badge === '4K' && (
+                                <span className="px-1 py-0.2 rounded bg-amber-500/30 text-amber-300 text-[8px] font-black border border-amber-500/40">
+                                  UHD
+                                </span>
+                              )}
+                              {preset.badge === '2K' && (
+                                <span className="px-1 py-0.2 rounded bg-purple-500/30 text-purple-300 text-[8px] font-black border border-purple-500/40">
+                                  QHD
+                                </span>
+                              )}
+                            </div>
+                            <span className={`text-[9px] ${isSelected ? 'text-indigo-100' : 'text-zinc-500'}`}>
+                              {preset.sublabel}
+                            </span>
+                          </div>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-white ml-2 flex-shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Stream Native Bitrate Info if HLS levels detected */}
+                  {levels.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-zinc-800/80 text-[10px] text-zinc-400 flex items-center justify-between">
+                      <span>Pistas detectadas:</span>
+                      <span className="text-indigo-400 font-bold">{levels.length} resoluciones</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Picture-in-Picture */}

@@ -3,11 +3,46 @@
 @layer base {
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
   }
   
   h1, h2, h3, h4, .font-display {
     font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
   }
+
+  /* Focus styling for Smart TV / TV Box D-Pad Remote Navigation */
+  :focus-visible {
+    outline: 3px solid #6366f1 !important;
+    outline-offset: 2px !important;
+    box-shadow: 0 0 16px rgba(99, 102, 241, 0.6) !important;
+    transform: scale(1.02);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+}
+
+/* Hide scrollbars while allowing smooth scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Safe Area Inset Support for Mobile & TV Overscan */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pl-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+.pr-safe {
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 /* Custom sleek scrollbar for IPTV channel lists and grids */
@@ -54,3 +89,50 @@
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+/* TV Mode Scaled UI */
+.tv-mode-active {
+  font-size: 1.15rem;
+}
+.tv-mode-active button,
+.tv-mode-active a,
+.tv-mode-active [role="button"] {
+  min-height: 48px;
+}
+
+/* =========================================================================
+   PERFORMANCE MODES: BAJO (LOW), MEDIO (MEDIUM), ALTO (HIGH)
+   ========================================================================= */
+
+/* Modo Bajo (Low-end hardware, 1GB RAM TV Box, older phones) */
+.perf-low,
+.perf-low * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  transition-duration: 0.05s !important;
+}
+
+.perf-low .glass-panel {
+  background: #111116 !important;
+}
+
+.perf-low .animate-pulse,
+.perf-low .animate-bounce,
+.perf-low .animate-spin {
+  animation: none !important;
+}
+
+/* Modo Medio (Balanced default) */
+.perf-medium {
+  /* standard optimized defaults */
+}
+
+/* Modo Alto (Full luxury aesthetics, fluid 60fps, deep buffers) */
+.perf-high .glass-panel {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+

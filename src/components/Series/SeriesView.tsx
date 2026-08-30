@@ -312,8 +312,16 @@ export const SeriesView: React.FC<SeriesViewProps> = ({
                 return (
                   <div
                     key={item.id}
+                    tabIndex={0}
+                    role="button"
                     onClick={() => handleOpenSeries(item)}
-                    className="group relative bg-zinc-950/80 border border-zinc-800/80 hover:border-purple-500/50 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10 cursor-pointer flex flex-col"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleOpenSeries(item);
+                      }
+                    }}
+                    className="group relative bg-zinc-950/80 border border-zinc-800/80 hover:border-purple-500/50 focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:outline-none rounded-xl overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/10 cursor-pointer flex flex-col"
                   >
                     {/* Poster Image with Robust Fallback */}
                     <div className="relative aspect-[2/3] w-full bg-zinc-900 overflow-hidden">

@@ -53,18 +53,18 @@ npx cap open android`;
         {/* Header */}
         <div className="p-5 border-b border-zinc-800 flex items-center justify-between bg-gradient-to-r from-zinc-950 via-indigo-950/20 to-zinc-950">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-              <Smartphone className="w-5 h-5" />
+            <div className="w-11 h-11 rounded-xl bg-black border border-indigo-500/40 overflow-hidden flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <img src="/logo.png" alt="Codigo Master IPTV Logo" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-white">Guía para Compilar APK en GitHub</h3>
+                <h3 className="text-base font-bold text-white">Compilar APK (Codigo Master IPTV)</h3>
                 <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
                   Configurado
                 </span>
               </div>
               <p className="text-xs text-zinc-400">
-                Tu proyecto ya incluye <code className="text-indigo-300">.github/workflows/build-apk.yml</code> y <code className="text-indigo-300">capacitor.config.json</code>
+                Tu proyecto ya incluye <code className="text-indigo-300">.github/workflows/build-apk.yml</code> e icono personalizado
               </p>
             </div>
           </div>

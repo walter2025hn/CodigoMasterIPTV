@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { ChannelItem, UserSettings } from '../../types/iptv';
 import { VideoPlayer } from '../Player/VideoPlayer';
+import { DateTimeWidget } from '../Common/DateTimeWidget';
 
 interface LiveTVViewProps {
   channels: ChannelItem[];
@@ -303,21 +304,24 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
 
         {/* Channel Grid / List */}
         <div className="flex-1 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col lg:min-h-0 lg:overflow-hidden">
-          <div className="flex items-center justify-between mb-3 px-1">
+          <div className="flex items-center justify-between mb-3 px-1 gap-2">
             <div className="flex items-center gap-2">
               <Tv className="w-4 h-4 text-indigo-400" />
               <span className="text-xs font-bold uppercase tracking-wider text-zinc-300">
                 Canales ({visibleChannels.length} de {filteredChannels.length})
               </span>
             </div>
-            {selectedCategory !== 'all' && (
-              <button
-                onClick={() => setSelectedCategory('all')}
-                className="text-[11px] text-indigo-400 hover:underline cursor-pointer"
-              >
-                Ver todos
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              <DateTimeWidget variant="compact" className="hidden sm:flex" />
+              {selectedCategory !== 'all' && (
+                <button
+                  onClick={() => setSelectedCategory('all')}
+                  className="text-[11px] text-indigo-400 hover:underline cursor-pointer"
+                >
+                  Ver todos
+                </button>
+              )}
+            </div>
           </div>
 
           {filteredChannels.length === 0 ? (
@@ -336,8 +340,16 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
                   return (
                     <div
                       key={ch.id}
+                      tabIndex={0}
+                      role="button"
                       onClick={() => onSelectChannel(ch)}
-                      className={`group relative flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onSelectChannel(ch);
+                        }
+                      }}
+                      className={`group relative flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:outline-none ${
                         isPlayingThis
                           ? 'bg-indigo-600/20 border-indigo-500/50 shadow-md shadow-indigo-500/10'
                           : 'bg-zinc-950/60 border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-900/80'

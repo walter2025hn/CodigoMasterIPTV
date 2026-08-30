@@ -6,9 +6,14 @@ import {
   Heart,
   History,
   ListVideo,
-  Smartphone,
   Sparkles,
+  ExternalLink,
+  DollarSign,
+  MessageCircle,
+  Phone,
+  Video,
 } from 'lucide-react';
+import { DateTimeWidget } from './Common/DateTimeWidget';
 
 export type MainTab = 'live' | 'movies' | 'series' | 'favorites' | 'history' | 'sources';
 
@@ -22,14 +27,14 @@ interface NavigationProps {
     favorites: number;
     history: number;
   };
-  onOpenApkModal: () => void;
+  onOpenSupportModal?: () => void;
 }
 
 export const Navigation: React.FC<NavigationProps> = ({
   activeTab,
   onTabChange,
   counts,
-  onOpenApkModal,
+  onOpenSupportModal,
 }) => {
   const tabs = [
     {
@@ -86,7 +91,12 @@ export const Navigation: React.FC<NavigationProps> = ({
       {/* Desktop & Tablet Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 bg-zinc-950/60 border-r border-zinc-900 p-4 shrink-0 justify-between">
         <div className="space-y-1.5">
-          <div className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-zinc-500">
+          {/* Live Date & Time Widget in Sidebar */}
+          <div className="mb-3">
+            <DateTimeWidget variant="badge" className="w-full justify-between" />
+          </div>
+
+          <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-zinc-500">
             Navegación Principal
           </div>
           {tabs.map((tab) => {
@@ -122,26 +132,94 @@ export const Navigation: React.FC<NavigationProps> = ({
           })}
         </div>
 
-        {/* Bottom Banner for APK Build */}
-        <div className="mt-6 p-3.5 rounded-2xl bg-gradient-to-br from-indigo-950/40 via-zinc-900 to-purple-950/40 border border-indigo-500/20 text-xs">
-          <div className="flex items-center gap-2 text-indigo-400 font-semibold mb-1">
-            <Smartphone className="w-4 h-4" />
-            <span>Listo para APK</span>
+        {/* Creator Support Card */}
+        <div className="mt-4 p-3.5 rounded-2xl bg-gradient-to-br from-rose-950/30 via-zinc-900/90 to-indigo-950/30 border border-rose-500/20 text-xs shadow-lg shadow-black/40">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5 text-rose-400 font-bold">
+              <Heart className="w-3.5 h-3.5 fill-rose-500/20" />
+              <span>Apoya al Creador</span>
+            </div>
+            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-300 font-semibold border border-rose-500/20">
+              Walter A.
+            </span>
           </div>
+
           <p className="text-zinc-400 text-[11px] leading-relaxed mb-3">
-            Sube este código a GitHub para compilar el APK de Android automáticamente.
+            Únete a la comunidad, haz tus consultas y apoya el proyecto.
           </p>
-          <button
-            onClick={onOpenApkModal}
-            className="w-full py-1.5 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-[11px] transition-colors shadow-md shadow-indigo-600/20"
-          >
-            Ver Guía GitHub APK
-          </button>
+
+          {/* Quick Icon Links with Clean Shortcuts */}
+          <div className="grid grid-cols-4 gap-1.5 mb-2.5">
+            <a
+              href="https://paypal.me/WalterAntunez2012"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 flex flex-col items-center justify-center gap-0.5 transition-all group/btn"
+              title="PayPal: paypal.me/WalterAntunez2012"
+            >
+              <DollarSign className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
+              <span className="text-[9px] font-bold">PayPal</span>
+            </a>
+
+            <a
+              href="https://chat.whatsapp.com/DPZKNaFurHWI2Yb8CTVeJj?s=cl&p=a&mlu=4"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex flex-col items-center justify-center gap-0.5 transition-all group/btn"
+              title="Grupo WhatsApp Comunidad"
+            >
+              <MessageCircle className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
+              <span className="text-[9px] font-bold">Grupo</span>
+            </a>
+
+            <a
+              href="https://wa.me/50489476293"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-xl bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 text-green-400 flex flex-col items-center justify-center gap-0.5 transition-all group/btn"
+              title="Chat Directo WhatsApp (+504 8947-6293)"
+            >
+              <Phone className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
+              <span className="text-[9px] font-bold">Chat</span>
+            </a>
+
+            <a
+              href="https://www.tiktok.com/@codigomaster504"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 flex flex-col items-center justify-center gap-0.5 transition-all group/btn"
+              title="TikTok: @codigomaster504"
+            >
+              <Video className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
+              <span className="text-[9px] font-bold">TikTok</span>
+            </a>
+          </div>
+
+          {/* Main Action Button */}
+          {onOpenSupportModal ? (
+            <button
+              onClick={onOpenSupportModal}
+              className="w-full py-1.5 px-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white font-bold text-[11px] transition-all shadow-md shadow-rose-600/20 flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Heart className="w-3.5 h-3.5 fill-white" />
+              <span>Ver Todos los Enlaces</span>
+            </button>
+          ) : (
+            <a
+              href="https://paypal.me/WalterAntunez2012"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-1.5 px-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white font-bold text-[11px] transition-all shadow-md shadow-rose-600/20 flex items-center justify-center gap-1.5 text-center"
+            >
+              <Heart className="w-3.5 h-3.5 fill-white" />
+              <span>Donar por PayPal</span>
+            </a>
+          )}
         </div>
       </aside>
 
-      {/* Mobile Bottom Navigation Bar */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-zinc-950/95 backdrop-blur-lg border-t border-zinc-800/80 px-2 py-1.5 flex items-center justify-around">
+      {/* Mobile Bottom Navigation Bar with Safe Area */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-800/80 px-2 py-1.5 pb-safe flex items-center justify-around">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -149,7 +227,7 @@ export const Navigation: React.FC<NavigationProps> = ({
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+              className={`flex flex-col items-center justify-center min-w-[50px] min-h-[44px] py-1 px-2 rounded-xl transition-all cursor-pointer ${
                 isActive ? `${tab.accent} font-semibold scale-105` : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >

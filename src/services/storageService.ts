@@ -3,9 +3,11 @@ import {
   FavoriteItem,
   HistoryItem,
   PlaylistSource,
+  SportsMatch,
   UserSettings,
 } from '../types/iptv';
 import { DBService } from './dbService';
+import { DEFAULT_MATCHES } from '../data/matchesData';
 
 const STORAGE_KEYS = {
   SOURCES: 'codigomaster_sources',
@@ -14,6 +16,7 @@ const STORAGE_KEYS = {
   FAVORITES: 'codigomaster_favorites',
   HISTORY: 'codigomaster_history',
   SETTINGS: 'codigomaster_settings',
+  SPORTS_MATCHES: 'codigomaster_sports_matches',
 };
 
 export const DEFAULT_DEMO_SOURCE: PlaylistSource = {
@@ -167,6 +170,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   muted: false,
   bufferLength: 30,
   tvRemoteMode: false,
+  performanceMode: 'medium',
 };
 
 export class StorageService {
@@ -384,5 +388,49 @@ export class StorageService {
 
   public static saveSettings(settings: UserSettings): void {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+  }
+
+  // Sports Matches
+  public static getMatches(): SportsMatch[] {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.SPORTS_MATCHES);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+      return DEFAULT_MATCHES;
+    } catch {
+      return DEFAULT_MATCHES;
+    }
+  }
+
+  public static saveMatches(matches: SportsMatch[]): void {
+    try {
+      localStorage.setItem(STORAGE_KEYS.SPORTS_MATCHES, JSON.stringify(matches));
+    } catch (err) {
+      console.warn('StorageService saveMatches error:', err);
+    }
+  }
+
+  public static addMatch(match: SportsMatch): void {
+    const matches = this.getMatches();
+    const existingIndex = matches.findIndex((m) => m.id === match.id);
+    if (existingIndex >= 0) {
+      matches[existingIndex] = match;
+    } else {
+      matches.unshift(match);
+    }
+    this.saveMatches(matches);
+  }
+
+  public static deleteMatch(matchId: string): void {
+    const matches = this.getMatches().filter((m) => m.id !== matchId);
+    this.saveMatches(matches);
+  }
+
+  public static resetMatches(): void {
+    this.saveMatches(DEFAULT_MATCHES);
   }
 }

@@ -151,6 +151,10 @@ export interface HistoryItem {
   episodeTitle?: string;
 }
 
+export type PerformanceProfile = 'low' | 'medium' | 'high';
+
+export type VideoQualityPreset = 'auto' | '480p' | '720p' | '1080p' | '2k' | '4k';
+
 export interface UserSettings {
   useProxy: boolean;
   autoPlay: boolean;
@@ -160,4 +164,39 @@ export interface UserSettings {
   bufferLength: number;
   tvRemoteMode: boolean;
   audioTrackIndex?: number;
+  performanceMode?: PerformanceProfile;
+  preferredQuality?: VideoQualityPreset;
 }
+
+export type SportType = 'football' | 'basketball' | 'motor' | 'tennis' | 'combat' | 'other';
+export type MatchStatus = 'live' | 'upcoming' | 'finished';
+
+export interface MatchChannel {
+  name: string;
+  quality?: string;
+  language?: string;
+  customUrl?: string;
+  channelId?: string;
+}
+
+export interface SportsMatch {
+  id: string;
+  sport: SportType;
+  tournament: string;
+  tournamentLogo?: string;
+  homeTeam: string;
+  awayTeam?: string;
+  homeLogo?: string;
+  awayLogo?: string;
+  status: MatchStatus;
+  date: string;
+  time: string;
+  timestamp: number;
+  score?: string;
+  liveMinute?: string;
+  stadiumOrLocation?: string;
+  channels: MatchChannel[];
+  isHot?: boolean;
+  category?: string;
+}
+

@@ -10,8 +10,12 @@ import {
   RotateCcw,
   Zap,
   Radio,
+  Cpu,
+  Gauge,
+  Sparkles,
+  Layers,
 } from 'lucide-react';
-import { UserSettings } from '../../types/iptv';
+import { UserSettings, PerformanceProfile, VideoQualityPreset } from '../../types/iptv';
 import { StorageService } from '../../services/storageService';
 
 interface SettingsModalProps {
@@ -20,6 +24,7 @@ interface SettingsModalProps {
   settings: UserSettings;
   onUpdateSettings: (newSettings: UserSettings) => void;
   onResetToDemo: () => void;
+  onReplayIntro?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -28,8 +33,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   settings,
   onUpdateSettings,
   onResetToDemo,
+  onReplayIntro,
 }) => {
   if (!isOpen) return null;
+
+  const currentPerf = settings.performanceMode || 'medium';
+
+  const handleQualityChange = (q: VideoQualityPreset) => {
+    const updated: UserSettings = { ...settings, preferredQuality: q };
+    onUpdateSettings(updated);
+    StorageService.saveSettings(updated);
+  };
+
+  const handlePerformanceChange = (profile: PerformanceProfile) => {
+    let suggestedBuffer = settings.bufferLength || 30;
+    if (profile === 'low') suggestedBuffer = 15;
+    else if (profile === 'medium') suggestedBuffer = 30;
+    else if (profile === 'high') suggestedBuffer = 45;
+
+    const updated: UserSettings = {
+      ...settings,
+      performanceMode: profile,
+      bufferLength: suggestedBuffer,
+    };
+    onUpdateSettings(updated);
+    StorageService.saveSettings(updated);
+  };
 
   const handleToggleProxy = () => {
     const updated: UserSettings = { ...settings, useProxy: !settings.useProxy };
@@ -79,7 +108,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-white">Configuración del Reproductor</h3>
-              <p className="text-xs text-zinc-400">Opciones de reproducción, CORS y modo TV</p>
+              <p className="text-xs text-zinc-400">Rendimiento, reproducción, CORS y modo TV</p>
             </div>
           </div>
 
@@ -93,6 +122,112 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Content */}
         <div className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
+          {/* PERFORMANCE PROFILE / POTENCIA DE LA APP */}
+          <div className="p-4 rounded-2xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-zinc-800/90 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Gauge className="w-4 h-4 text-emerald-400" />
+                <span className="font-bold text-white text-sm">Potencia & Rendimiento</span>
+              </div>
+              <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-md bg-indigo-600/20 text-indigo-300 border border-indigo-500/30">
+                {currentPerf === 'low' ? 'Bajo' : currentPerf === 'medium' ? 'Medio' : 'Alto'}
+              </span>
+            </div>
+            <p className="text-[11px] text-zinc-400">
+              Ajusta el consumo de memoria RAM, animaciones y búfer de video según la potencia de tu dispositivo.
+            </p>
+
+            {/* 3 Options: Bajo, Medio, Alto */}
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              {/* BAJO */}
+              <button
+                onClick={() => handlePerformanceChange('low')}
+                className={`p-3 rounded-xl border flex flex-col items-center text-center transition-all cursor-pointer ${
+                  currentPerf === 'low'
+                    ? 'bg-emerald-950/40 border-emerald-500 text-white shadow-lg shadow-emerald-950/50 scale-[1.02]'
+                    : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-850'
+                }`}
+              >
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center mb-1.5 ${
+                    currentPerf === 'low' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-800 text-zinc-400'
+                  }`}
+                >
+                  <Cpu className="w-4 h-4" />
+                </div>
+                <span className="font-bold text-xs text-white">Bajo</span>
+                <span className="text-[9px] text-emerald-400 font-semibold mt-0.5">Ahorro RAM</span>
+                <span className="text-[9px] text-zinc-500 mt-1 leading-tight">
+                  TV Box 1GB & Móviles básicos
+                </span>
+              </button>
+
+              {/* MEDIO */}
+              <button
+                onClick={() => handlePerformanceChange('medium')}
+                className={`p-3 rounded-xl border flex flex-col items-center text-center transition-all cursor-pointer ${
+                  currentPerf === 'medium'
+                    ? 'bg-indigo-950/40 border-indigo-500 text-white shadow-lg shadow-indigo-950/50 scale-[1.02]'
+                    : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-850'
+                }`}
+              >
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center mb-1.5 ${
+                    currentPerf === 'medium' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-zinc-800 text-zinc-400'
+                  }`}
+                >
+                  <Zap className="w-4 h-4" />
+                </div>
+                <span className="font-bold text-xs text-white">Medio</span>
+                <span className="text-[9px] text-indigo-400 font-semibold mt-0.5">Equilibrado</span>
+                <span className="text-[9px] text-zinc-500 mt-1 leading-tight">
+                  Smart TVs & Móviles estándar
+                </span>
+              </button>
+
+              {/* ALTO */}
+              <button
+                onClick={() => handlePerformanceChange('high')}
+                className={`p-3 rounded-xl border flex flex-col items-center text-center transition-all cursor-pointer ${
+                  currentPerf === 'high'
+                    ? 'bg-purple-950/40 border-purple-500 text-white shadow-lg shadow-purple-950/50 scale-[1.02]'
+                    : 'bg-zinc-900/70 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-850'
+                }`}
+              >
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center mb-1.5 ${
+                    currentPerf === 'high' ? 'bg-purple-500/20 text-purple-400' : 'bg-zinc-800 text-zinc-400'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <span className="font-bold text-xs text-white">Alto</span>
+                <span className="text-[9px] text-purple-400 font-semibold mt-0.5">Máx. Calidad</span>
+                <span className="text-[9px] text-zinc-500 mt-1 leading-tight">
+                  PC, TV 4K & Móviles potentes
+                </span>
+              </button>
+            </div>
+
+            {onReplayIntro && (
+              <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between">
+                <span className="text-[11px] text-zinc-400">
+                  Animación de inicio adaptada al perfil actual
+                </span>
+                <button
+                  onClick={() => {
+                    onClose();
+                    onReplayIntro();
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-[11px] font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <Sparkles className="w-3 h-3 text-indigo-400" />
+                  <span>Probar Animación</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* CORS Proxy Option */}
           <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 flex items-center justify-between">
             <div className="space-y-0.5 pr-4">
@@ -194,6 +329,50 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
+          {/* Default Quality Setting (480p to 4K) */}
+          <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-white">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>Calidad de Video Predeterminada</span>
+              </div>
+              <span className="text-[10px] text-amber-400/90 font-bold uppercase">
+                {settings.preferredQuality || 'auto'}
+              </span>
+            </div>
+            <p className="text-zinc-400 text-[11px]">
+              Selecciona el perfil de resolución preferido para la reproducción de canales y películas (480p a 4K).
+            </p>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 pt-1">
+              {([
+                { id: 'auto', label: 'Auto', badge: 'Adaptable' },
+                { id: '480p', label: '480p', badge: 'SD' },
+                { id: '720p', label: '720p', badge: 'HD' },
+                { id: '1080p', label: '1080p', badge: 'FHD' },
+                { id: '2k', label: '2K', badge: 'QHD' },
+                { id: '4k', label: '4K', badge: 'UHD' },
+              ] as const).map((q) => {
+                const isSelected = (settings.preferredQuality || 'auto') === q.id;
+                return (
+                  <button
+                    key={q.id}
+                    onClick={() => handleQualityChange(q.id)}
+                    className={`py-2 px-1 rounded-xl text-center flex flex-col items-center justify-center transition-all cursor-pointer border ${
+                      isSelected
+                        ? 'bg-gradient-to-tr from-amber-600 to-amber-500 text-black border-amber-400 font-black shadow-lg shadow-amber-500/20'
+                        : 'bg-zinc-800/80 text-zinc-300 border-zinc-700/60 hover:bg-zinc-700'
+                    }`}
+                  >
+                    <span className="text-xs font-bold">{q.label}</span>
+                    <span className={`text-[8px] font-semibold ${isSelected ? 'text-black/80' : 'text-zinc-500'}`}>
+                      {q.badge}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Buffer Length */}
           <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-zinc-800 space-y-2">
             <div className="flex justify-between items-center font-bold text-white">
@@ -210,9 +389,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               className="w-full h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
             />
             <div className="flex justify-between text-[10px] text-zinc-500">
-              <span>10s (Baja Latencia)</span>
+              <span>10s (Baja Latencia / Ahorro)</span>
               <span>30s (Estable)</span>
-              <span>60s (Conexiones lentas)</span>
+              <span>60s (Ultra Búfer)</span>
             </div>
           </div>
 
@@ -254,3 +433,4 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     </div>
   );
 };
+

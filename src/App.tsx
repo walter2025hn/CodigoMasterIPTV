@@ -27,7 +27,11 @@ import { AddSourceModal } from './components/Modals/AddSourceModal';
 import { ApkExportModal } from './components/Modals/ApkExportModal';
 import { SettingsModal } from './components/Modals/SettingsModal';
 import { AccountDetailsModal } from './components/Modals/AccountDetailsModal';
+import { VirtualRemoteModal } from './components/Modals/VirtualRemoteModal';
+import { SupportCreatorModal } from './components/Modals/SupportCreatorModal';
 import { PlayerOverlayModal } from './components/Player/PlayerOverlayModal';
+import { SplashScreen } from './components/Splash/SplashScreen';
+import { Tv as TvIcon } from 'lucide-react';
 
 export default function App() {
   // Sources & Channels
@@ -37,6 +41,9 @@ export default function App() {
   const [isLoadingChannels, setIsLoadingChannels] = useState<boolean>(false);
   const [isSyncingVod, setIsSyncingVod] = useState<boolean>(false);
   const [isSyncingSeries, setIsSyncingSeries] = useState<boolean>(false);
+
+  // Splash Screen Intro
+  const [showSplash, setShowSplash] = useState<boolean>(true);
 
   // Playback & Navigation State
   const [activeTab, setActiveTab] = useState<MainTab>('live');
@@ -52,8 +59,10 @@ export default function App() {
   // Modals
   const [isAddSourceOpen, setIsAddSourceOpen] = useState<boolean>(false);
   const [isApkModalOpen, setIsApkModalOpen] = useState<boolean>(false);
+  const [isSupportModalOpen, setIsSupportModalOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isAccountDetailsOpen, setIsAccountDetailsOpen] = useState<boolean>(false);
+  const [isVirtualRemoteOpen, setIsVirtualRemoteOpen] = useState<boolean>(false);
 
   // Initial Load
   useEffect(() => {
@@ -350,8 +359,42 @@ export default function App() {
     }
   };
 
+  // Channel number direct jump for TV Remote
+  const handleSelectChannelNumber = (num: number) => {
+    if (num <= 0 || liveChannels.length === 0) return;
+    const target = liveChannels[num - 1] || liveChannels[liveChannels.length - 1];
+    if (target) {
+      handlePlayItem(target);
+    }
+  };
+
+  const handlePerformanceModeChange = (mode: 'low' | 'medium' | 'high') => {
+    let suggestedBuffer = settings.bufferLength || 30;
+    if (mode === 'low') suggestedBuffer = 15;
+    else if (mode === 'medium') suggestedBuffer = 30;
+    else if (mode === 'high') suggestedBuffer = 45;
+
+    const updated: UserSettings = {
+      ...settings,
+      performanceMode: mode,
+      bufferLength: suggestedBuffer,
+    };
+    setSettings(updated);
+    StorageService.saveSettings(updated);
+  };
+
   return (
-    <div className="flex flex-col h-screen w-screen bg-zinc-950 text-zinc-100 overflow-hidden font-sans select-none">
+    <div
+      className={`flex flex-col h-screen w-screen bg-zinc-950 text-zinc-100 overflow-hidden font-sans select-none ${
+        settings.tvRemoteMode ? 'tv-mode-active text-scale-tv' : ''
+      } ${
+        settings.performanceMode === 'low'
+          ? 'perf-low'
+          : settings.performanceMode === 'high'
+          ? 'perf-high'
+          : 'perf-medium'
+      }`}
+    >
       {/* Top Header */}
       <Header
         sources={sources}
@@ -363,6 +406,10 @@ export default function App() {
         onOpenAccountDetails={
           activeSource?.type === 'xtream' ? () => setIsAccountDetailsOpen(true) : undefined
         }
+        onOpenVirtualRemote={() => setIsVirtualRemoteOpen(true)}
+        onReplayIntro={() => setShowSplash(true)}
+        performanceMode={settings.performanceMode || 'medium'}
+        onChangePerformanceMode={handlePerformanceModeChange}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onRefreshChannels={handleRefreshChannels}
@@ -382,7 +429,7 @@ export default function App() {
             favorites: favorites.length,
             history: history.length,
           }}
-          onOpenApkModal={() => setIsApkModalOpen(true)}
+          onOpenSupportModal={() => setIsSupportModalOpen(true)}
         />
 
         {/* Dynamic Tab Content */}
@@ -464,6 +511,16 @@ export default function App() {
               isLoading={isLoadingChannels}
             />
           )}
+
+          {/* Floating TV Remote Launcher Button (Ergonomic for mobile & TV Box users) */}
+          <button
+            onClick={() => setIsVirtualRemoteOpen(true)}
+            className="fixed bottom-18 lg:bottom-6 right-5 z-30 p-3 rounded-2xl bg-indigo-600/90 hover:bg-indigo-500 text-white shadow-xl shadow-indigo-600/40 border border-indigo-400/30 backdrop-blur-md flex items-center gap-2 cursor-pointer transition-all hover:scale-105 active:scale-95 group/remote"
+            title="Abrir Mando Virtual TV"
+          >
+            <TvIcon className="w-5 h-5 group-hover/remote:animate-bounce" />
+            <span className="text-xs font-bold hidden sm:inline">Mando TV</span>
+          </button>
         </main>
       </div>
 
@@ -480,7 +537,62 @@ export default function App() {
         onProgress={handleProgress}
       />
 
+      {/* VIRTUAL TV REMOTE CONTROL MODAL */}
+      <VirtualRemoteModal
+        isOpen={isVirtualRemoteOpen}
+        onClose={() => setIsVirtualRemoteOpen(false)}
+        currentChannel={currentPlayingItem}
+        onNextChannel={handleNextChannel}
+        onPrevChannel={handlePrevChannel}
+        onTogglePlay={() => {
+          // Trigger Space key on document to toggle player
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space' }));
+        }}
+        isPlaying={true}
+        onToggleMute={() => {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', code: 'KeyM' }));
+        }}
+        isMuted={false}
+        onVolumeUp={() => {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', code: 'ArrowUp' }));
+        }}
+        onVolumeDown={() => {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown' }));
+        }}
+        onToggleFullscreen={() => {
+          if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => {});
+          } else {
+            document.exitFullscreen().catch(() => {});
+          }
+        }}
+        onToggleFavorite={
+          currentPlayingItem ? () => handleToggleFavorite(currentPlayingItem) : undefined
+        }
+        isFavorite={currentPlayingItem ? favoriteIds.includes(currentPlayingItem.id) : false}
+        onSelectChannelNumber={handleSelectChannelNumber}
+        onCycleAspectRatio={() => {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA' }));
+        }}
+        onToggleCategories={() => {
+          setActiveTab('live');
+        }}
+        performanceMode={settings.performanceMode || 'medium'}
+        onChangePerformanceMode={handlePerformanceModeChange}
+        currentQuality={settings.preferredQuality || 'auto'}
+        onChangeQuality={(q) => {
+          const updated = { ...settings, preferredQuality: q };
+          setSettings(updated);
+          StorageService.saveSettings(updated);
+        }}
+      />
+
       {/* MODALS */}
+      <SupportCreatorModal
+        isOpen={isSupportModalOpen}
+        onClose={() => setIsSupportModalOpen(false)}
+      />
+
       <AddSourceModal
         isOpen={isAddSourceOpen}
         onClose={() => setIsAddSourceOpen(false)}
@@ -499,6 +611,7 @@ export default function App() {
         settings={settings}
         onUpdateSettings={setSettings}
         onResetToDemo={handleResetToDemo}
+        onReplayIntro={() => setShowSplash(true)}
       />
 
       <AccountDetailsModal
@@ -506,6 +619,14 @@ export default function App() {
         onClose={() => setIsAccountDetailsOpen(false)}
         source={activeSource}
       />
+
+      {/* Adaptive Animated Splash Screen */}
+      {showSplash && (
+        <SplashScreen
+          performanceMode={settings.performanceMode || 'medium'}
+          onFinish={() => setShowSplash(false)}
+        />
+      )}
     </div>
   );
 }

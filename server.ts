@@ -54,7 +54,7 @@ async function startServer() {
         const userAgent =
           (req.headers["user-agent"] as string && !req.headers["user-agent"].includes("Mozilla"))
             ? (req.headers["user-agent"] as string)
-            : "IPTVSmartersPro/3.1.5 (Linux; Android 12) ExoPlayerLib/2.18.1";
+            : "IPTVSmartersPro/3.1.5 (Linux; Android 12) ExoPlayerLib/2.18.1 VLC/3.0.18";
 
         const headers: Record<string, string> = {
           "User-Agent": userAgent,
@@ -73,7 +73,7 @@ async function startServer() {
             headers,
             agent,
             rejectUnauthorized: false, // Allows self-signed IPTV stream certs
-            timeout: 25000,
+            timeout: 30000,
           },
           (proxyRes) => {
             // Once data starts flowing, disable socket timeout so full movies/series stream without interruption
