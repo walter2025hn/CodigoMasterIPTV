@@ -7,7 +7,7 @@ buildscript {
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.13.0'
-        classpath 'com.google.gms:google-services:4.4.2'
+        classpath 'com.google.gms:google-services:4.4.4'
     }
 }
 
@@ -17,19 +17,6 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-    }
-    
-    // Desactiva abortos por lint en todos los sub-módulos (incluyendo capacitor-android)
-    afterEvaluate { project ->
-        if (project.hasProperty('android')) {
-            project.android {
-                lintOptions {
-                    abortOnError false
-                    checkReleaseBuilds false
-                    warningsAsErrors false
-                }
-            }
-        }
     }
 }
 

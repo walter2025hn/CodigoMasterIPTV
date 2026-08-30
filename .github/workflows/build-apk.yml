@@ -40,7 +40,7 @@ jobs:
         run: |
           npm install --legacy-peer-deps --no-audit --no-fund
 
-      - name: Build Web Application (Target ES2018 / Android 5+)
+      - name: Build Web Application
         run: |
           npm run build
 
@@ -53,7 +53,7 @@ jobs:
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleDebug -x test -x lint -x lintVitalRelease -x lintVitalReport --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace
         env:
           JAVA_OPTS: "-Xmx3072m"
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx3072m"
