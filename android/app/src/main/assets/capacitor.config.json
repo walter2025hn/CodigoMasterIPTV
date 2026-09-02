@@ -4,7 +4,7 @@
 	"webDir": "dist",
 	"bundledWebRuntime": false,
 	"server": {
-		"androidScheme": "http",
+		"androidScheme": "https",
 		"cleartext": true,
 		"allowNavigation": [
 			"*"
@@ -12,9 +12,9 @@
 	},
 	"plugins": {
 		"SplashScreen": {
-			"launchShowDuration": 1000,
+			"launchShowDuration": 500,
 			"launchAutoHide": true,
-			"launchFadeOutDuration": 200,
+			"launchFadeOutDuration": 150,
 			"backgroundColor": "#09090b",
 			"showSpinner": false,
 			"splashFullScreen": true,

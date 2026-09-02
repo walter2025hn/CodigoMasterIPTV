@@ -5,15 +5,18 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
     },
     build: {
-      target: 'es2018',
-      cssTarget: 'chrome60',
+      target: ['es2015', 'chrome58'],
+      cssTarget: 'chrome58',
     },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',

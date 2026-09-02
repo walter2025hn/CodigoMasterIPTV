@@ -33,6 +33,7 @@ import { VirtualRemoteModal } from './components/Modals/VirtualRemoteModal';
 import { SupportCreatorModal } from './components/Modals/SupportCreatorModal';
 import { PlayerOverlayModal } from './components/Player/PlayerOverlayModal';
 import { SplashScreen } from './components/Splash/SplashScreen';
+import { SplashScreen as CapSplashScreen } from '@capacitor/splash-screen';
 import { Tv as TvIcon } from 'lucide-react';
 
 export default function App() {
@@ -46,6 +47,13 @@ export default function App() {
 
   // Splash Screen Intro (Disabled by default to boot instantly to channels on TV)
   const [showSplash, setShowSplash] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Hide native Capacitor Splash immediately when React is loaded
+    try {
+      CapSplashScreen.hide().catch(() => {});
+    } catch (e) {}
+  }, []);
 
   useEffect(() => {
     if (!showSplash) return;
@@ -134,26 +142,32 @@ export default function App() {
         return;
       }
 
-      // TV Channel Up / Down
+      // TV Channel Up / Down / Play / Pause / Media keys
       if (e.key === 'PageUp' || e.key === 'ChannelUp' || e.keyCode === 427 || e.keyCode === 33) {
         handleNextChannel();
         e.preventDefault();
       } else if (e.key === 'PageDown' || e.key === 'ChannelDown' || e.keyCode === 428 || e.keyCode === 34) {
         handlePrevChannel();
         e.preventDefault();
+      } else if (e.key === 'MediaPlayPause' || e.key === 'PlayPause' || e.keyCode === 179) {
+        // Toggle play/pause or open modal
+        if (!isPlayerModalOpen && currentPlayingItem) {
+          setIsPlayerModalOpen(true);
+          e.preventDefault();
+        }
       }
 
       // TV Remote Color Keys (Red, Green, Yellow, Blue)
-      if (e.key === 'ColorF0Red' || e.keyCode === 403) {
+      if (e.key === 'ColorF0Red' || e.keyCode === 403 || e.key === 'F1') {
         setActiveTab('matches');
         e.preventDefault();
-      } else if (e.key === 'ColorF1Green' || e.keyCode === 404) {
+      } else if (e.key === 'ColorF1Green' || e.keyCode === 404 || e.key === 'F2') {
         setActiveTab('live');
         e.preventDefault();
-      } else if (e.key === 'ColorF2Yellow' || e.keyCode === 405) {
+      } else if (e.key === 'ColorF2Yellow' || e.keyCode === 405 || e.key === 'F3') {
         setActiveTab('movies');
         e.preventDefault();
-      } else if (e.key === 'ColorF3Blue' || e.keyCode === 406) {
+      } else if (e.key === 'ColorF3Blue' || e.keyCode === 406 || e.key === 'F4') {
         setActiveTab('series');
         e.preventDefault();
       }
