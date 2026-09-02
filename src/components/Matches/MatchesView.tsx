@@ -423,8 +423,19 @@ export const MatchesView: React.FC<MatchesViewProps> = ({
                 return (
                   <div
                     key={channel.id || idx}
+                    tabIndex={0}
+                    role="button"
                     onClick={() => onPlayChannel(channel)}
-                    className="bg-zinc-900/90 hover:bg-zinc-850 border border-zinc-800/90 hover:border-amber-500/50 rounded-2xl p-3.5 flex flex-col justify-between gap-3 transition-all duration-200 shadow-md group cursor-pointer relative overflow-hidden"
+                    onFocus={(e) => {
+                      e.currentTarget.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onPlayChannel(channel);
+                      }
+                    }}
+                    className="bg-zinc-900/90 hover:bg-zinc-850 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 border border-zinc-800/90 hover:border-amber-500/50 rounded-2xl p-3.5 flex flex-col justify-between gap-3 transition-all duration-200 shadow-md group cursor-pointer relative overflow-hidden"
                   >
                     {/* Top Group & Live Indicator */}
                     <div className="flex items-center justify-between gap-2">

@@ -53,8 +53,8 @@ export const Header: React.FC<HeaderProps> = ({
   isLoading,
 }) => {
   return (
-    <header className="sticky top-0 z-30 w-full bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/80 px-4 lg:px-6 py-3">
-      <div className="flex flex-col md:flex-row items-center justify-between gap-3 max-w-7xl mx-auto">
+    <header className="sticky top-0 z-30 w-full bg-zinc-950/90 backdrop-blur-md border-b border-zinc-800/80 px-3 sm:px-4 lg:px-6 py-2.5 sm:py-3 shrink-0">
+      <div className="flex flex-col md:flex-row items-center justify-between gap-3 w-full">
         {/* Brand Logo & Name */}
         <div className="flex items-center justify-between w-full md:w-auto gap-4">
           <button

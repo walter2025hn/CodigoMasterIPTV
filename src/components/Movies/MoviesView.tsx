@@ -271,6 +271,9 @@ export const MoviesView: React.FC<MoviesViewProps> = ({
                     tabIndex={0}
                     role="button"
                     onClick={() => setSelectedMovieForDetail(movie)}
+                    onFocus={(e) => {
+                      e.currentTarget.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();

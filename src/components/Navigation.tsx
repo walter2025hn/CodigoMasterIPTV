@@ -116,6 +116,9 @@ export const Navigation: React.FC<NavigationProps> = ({
               <button
                 key={tab.id}
                 onClick={() => onTabChange(tab.id)}
+                onFocus={(e) => {
+                  e.currentTarget.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium border transition-all cursor-pointer ${
                   isActive
                     ? `${tab.activeBg} border shadow-lg`

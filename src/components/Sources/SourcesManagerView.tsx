@@ -68,8 +68,19 @@ export const SourcesManagerView: React.FC<SourcesManagerViewProps> = ({
           return (
             <div
               key={source.id}
+              tabIndex={0}
+              role="button"
               onClick={() => onSelectSource(source.id)}
-              className={`relative bg-zinc-950/90 border rounded-2xl p-4 flex flex-col justify-between transition-all cursor-pointer ${
+              onFocus={(e) => {
+                e.currentTarget.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelectSource(source.id);
+                }
+              }}
+              className={`relative bg-zinc-950/90 border rounded-2xl p-4 flex flex-col justify-between transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ${
                 isActive
                   ? 'border-indigo-500/60 shadow-xl shadow-indigo-500/10 ring-1 ring-indigo-500/40'
                   : 'border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-900/60'

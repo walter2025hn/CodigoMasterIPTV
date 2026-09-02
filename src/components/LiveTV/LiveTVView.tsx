@@ -343,6 +343,9 @@ export const LiveTVView: React.FC<LiveTVViewProps> = ({
                       tabIndex={0}
                       role="button"
                       onClick={() => onSelectChannel(ch)}
+                      onFocus={(e) => {
+                        e.currentTarget.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();

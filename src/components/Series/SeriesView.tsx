@@ -315,6 +315,9 @@ export const SeriesView: React.FC<SeriesViewProps> = ({
                     tabIndex={0}
                     role="button"
                     onClick={() => handleOpenSeries(item)}
+                    onFocus={(e) => {
+                      e.currentTarget.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();

@@ -96,8 +96,19 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
             return (
               <div
                 key={`${item.id}-${item.timestamp}`}
+                tabIndex={0}
+                role="button"
                 onClick={() => onPlayItem(channelItem)}
-                className="group relative bg-zinc-950/80 border border-zinc-800/80 hover:border-amber-500/50 rounded-xl p-3 flex flex-col justify-between hover:bg-zinc-900/80 transition-all cursor-pointer shadow-md"
+                onFocus={(e) => {
+                  e.currentTarget.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onPlayItem(channelItem);
+                  }
+                }}
+                className="group relative bg-zinc-950/80 border border-zinc-800/80 hover:border-amber-500/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-xl p-3 flex flex-col justify-between hover:bg-zinc-900/80 transition-all cursor-pointer shadow-md"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="relative w-12 h-12 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 overflow-hidden p-1">
